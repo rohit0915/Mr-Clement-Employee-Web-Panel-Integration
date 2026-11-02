@@ -7,13 +7,95 @@ import {
   useUpdateReservationMutation,
   useDeleteReservationMutation,
 } from '../../redux/api/reservationApi';
+import {
+  useGetAllFloorsQuery,
+  useGetFloorWithTablesQuery,
+} from '../../redux/api/quickOrderSlice';
 import type {
   CreateReservationPayload,
   UpdateReservationPayload,
   Reservation,
 } from '../../types/reservation';
+import type { Floor, FloorWithTablesResponse, Table } from '../../types/order';
 
 const toastStyle = { borderRadius: '10px', background: '#333', color: '#fff' };
+const RESERVATION_SLOT_TIME = '07:00 PM - 08:00 PM';
+const RESERVATION_WINDOW_DAYS = 10;
+const PHONE_DIGIT_COUNT = 10;
+const GUEST_NAME_MAX_LENGTH = 100;
+const NOTES_MAX_LENGTH = 500;
+
+const normalizePhone = (value: string): string =>
+  value.replace(/\D/g, '').slice(0, PHONE_DIGIT_COUNT);
+
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getReservationDateBounds = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastBookableDay = new Date(today);
+  lastBookableDay.setDate(lastBookableDay.getDate() + RESERVATION_WINDOW_DAYS);
+  return {
+    min: toLocalDateString(today),
+    max: toLocalDateString(lastBookableDay),
+  };
+};
+
+const isReservationDateAllowed = (value: string): boolean => {
+  const { min, max } = getReservationDateBounds();
+  const parsedDate = new Date(`${value}T00:00:00`);
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !Number.isNaN(parsedDate.getTime()) &&
+    toLocalDateString(parsedDate) === value &&
+    value >= min &&
+    value <= max
+  );
+};
+
+const getDateInputValue = (value: string): string => {
+  const dateOnly = /^(\d{4}-\d{2}-\d{2})/.exec(value)?.[1];
+  if (dateOnly) return dateOnly;
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime()) ? '' : toLocalDateString(parsedDate);
+};
+
+const useReservationTableOptions = (floorId: number) => {
+  const floorsQuery = useGetAllFloorsQuery();
+  const tablesQuery = useGetFloorWithTablesQuery(
+    { floorId: String(floorId), status: 'All' },
+    { skip: !floorId },
+  );
+  const response = tablesQuery.currentData as
+    | (FloorWithTablesResponse & { data?: FloorWithTablesResponse | Table[] })
+    | undefined;
+  const nestedData = response?.data;
+  const tables = Array.isArray(response?.tables)
+    ? response.tables
+    : Array.isArray(nestedData)
+      ? nestedData
+      : nestedData && !Array.isArray(nestedData) && Array.isArray(nestedData.tables)
+        ? nestedData.tables
+        : [];
+
+  return {
+    floors: floorsQuery.data?.data ?? [],
+    tables,
+    isLoading: floorsQuery.isLoading || tablesQuery.isFetching,
+    isError: floorsQuery.isError || tablesQuery.isError,
+  };
+};
+
+const getTableLabel = (table: Table): string =>
+  table['Table-name'] || table.Title || `Table ${table.Table_id}`;
+
+const getTableCapacity = (table: Table): number =>
+  table.Capacity ?? table['Seating-Persons_Count'] ?? 4;
 
 // ---------------------------------------------------------------------------
 // Create Modal
@@ -30,22 +112,57 @@ const NewReservationModal = ({
   isSubmitting: boolean;
 }) => {
   const { t } = useTranslation(); // ✅ Added i18n hook
+  const [floorId, setFloorId] = useState(0);
+  const { floors, tables, isLoading: isLoadingTables, isError: isTableLoadError } =
+    useReservationTableOptions(floorId);
 
   const [formData, setFormData] = useState<CreateReservationPayload>({
     Reservations_online: false,
     Customer_id: 25,
     slots: 'Dinner',
-    slots_time: '07:30 PM - 09:00 PM',
+    slots_time: RESERVATION_SLOT_TIME,
     title: 'Mohammed Al-Farsi',
-    Floor: 1,
+    customer_mobile: '',
+    Floor: 0,
     Capacity_count: 4,
     people_count: 4,
     PaymentStatus: 'UnPaid',
-    Table_id: 2,
-    Date_time: '2026-04-15T19:30:00.000Z',
+    Table_id: 0,
+    Date_time: '',
     Notes: 'Allergies: nuts',
     Status: true,
   });
+
+  useEffect(() => {
+    if (floors.length && !floors.some((floor: Floor) => floor.Floor_id === floorId)) {
+      setFloorId(floors[0].Floor_id);
+      setFormData((previous) => ({
+        ...previous,
+        Floor: floors[0].Floor_id,
+        Table_id: 0,
+      }));
+    }
+  }, [floors, floorId]);
+
+  useEffect(() => {
+    if (!floorId || isLoadingTables) return;
+    const currentTable = tables.find((table: Table) => table.Table_id === formData.Table_id);
+    if (currentTable) return;
+    const firstTable = tables[0];
+    setFormData((previous) => ({
+      ...previous,
+      Floor: floorId,
+      Table_id: firstTable?.Table_id ?? 0,
+      Capacity_count: firstTable ? getTableCapacity(firstTable) : previous.Capacity_count,
+    }));
+  }, [floorId, formData.Table_id, isLoadingTables, tables]);
+
+  const selectedFormTable = tables.find(
+    (table: Table) => table.Table_id === Number(formData.Table_id),
+  );
+  const exceedsTableCapacity =
+    selectedFormTable != null &&
+    Number(formData.people_count) > getTableCapacity(selectedFormTable);
 
   if (!isOpen) return null;
 
@@ -53,12 +170,82 @@ const NewReservationModal = ({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const numericFields = ['Customer_id', 'Floor', 'Capacity_count', 'people_count', 'Table_id'];
+    if (name === 'Floor') {
+      setFloorId(Number(value));
+      setFormData((prev) => ({
+        ...prev,
+        Floor: Number(value),
+        Table_id: 0,
+      }));
+      return;
+    }
+    if (name === 'Table_id') {
+      const selectedTable = tables.find((table: Table) => table.Table_id === Number(value));
+      setFormData((prev) => ({
+        ...prev,
+        Table_id: Number(value),
+        Floor: selectedTable?.Floor_id ?? floorId,
+        Capacity_count: selectedTable ? getTableCapacity(selectedTable) : prev.Capacity_count,
+      }));
+      return;
+    }
+    if (name === 'customer_mobile') {
+      setFormData((prev) => ({ ...prev, customer_mobile: normalizePhone(value) }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      [name]: numericFields.includes(name) ? Number(value) : value,
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    const guestName = formData.title.trim();
+    if (guestName.length < 2 || guestName.length > GUEST_NAME_MAX_LENGTH) {
+      toast.error(t('Guest name must be between 2 and 100 characters.'));
+      return;
+    }
+    if (!/^\d{10}$/.test(formData.customer_mobile ?? '')) {
+      toast.error(t('Enter a 10-digit contact number.'));
+      return;
+    }
+    if (!isReservationDateAllowed(formData.Date_time)) {
+      toast.error(t('Select a reservation date within the next 10 days.'));
+      return;
+    }
+    if (!Number.isInteger(Number(formData.Table_id)) || Number(formData.Table_id) < 1) {
+      toast.error(t('Select a valid table.'));
+      return;
+    }
+    const selectedTable = tables.find((table: Table) => table.Table_id === Number(formData.Table_id));
+    if (!selectedTable || selectedTable.Floor_id !== floorId) {
+      toast.error(t('Select a table from the selected floor.'));
+      return;
+    }
+    if (!Number.isInteger(Number(formData.people_count)) || Number(formData.people_count) < 1) {
+      toast.error(t('Party size must be at least 1.'));
+      return;
+    }
+    if (Number(formData.people_count) > getTableCapacity(selectedTable)) {
+      toast.error(t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
+        capacity: getTableCapacity(selectedTable),
+      }));
+      return;
+    }
+
+    onSubmit({
+      ...formData,
+      title: guestName,
+      customer_mobile: formData.customer_mobile,
+      Floor: selectedTable.Floor_id,
+      Capacity_count: getTableCapacity(selectedTable),
+      Table_id: Number(formData.Table_id),
+      people_count: Number(formData.people_count),
+      slots_time: RESERVATION_SLOT_TIME,
+      Date_time: formData.Date_time,
+    });
   };
 
   return (
@@ -71,58 +258,97 @@ const NewReservationModal = ({
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Guest Name')}</label>
+                <label htmlFor="new-reservation-guest-name" className="block text-[11px] text-gray-600 mb-1">{t('Guest Name')}</label>
                 <input
+                  id="new-reservation-guest-name"
                   type="text"
                   name="title"
+                  required
+                  minLength={2}
+                  maxLength={GUEST_NAME_MAX_LENGTH}
                   value={formData.title}
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
+                {exceedsTableCapacity && (
+                  <p role="alert" className="mt-1 text-xs text-red-600">
+                    {t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
+                      capacity: getTableCapacity(selectedFormTable),
+                    })}
+                  </p>
+                )}
               </div>
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Phone')}</label>
+                <label htmlFor="new-reservation-phone" className="block text-[11px] text-gray-600 mb-1">{t('Phone')}</label>
                 <input
-                  type="text"
-                  placeholder={t('+974 55-000-1234')}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Occasion')}</label>
-                <input
-                  type="text"
-                  placeholder={t('Birthday, Business, VIP...')}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Estimated Duration')}</label>
-                <input
-                  type="text"
-                  placeholder={t('__hr __min')}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Date & Time')}</label>
-                <input
-                  type="text"
-                  name="Date_time"
-                  value={formData.Date_time}
+                  id="new-reservation-phone"
+                  type="tel"
+                  name="customer_mobile"
+                  value={formData.customer_mobile ?? ''}
+                  placeholder={t('10-digit phone number')}
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  required
+                  maxLength={PHONE_DIGIT_COUNT}
+                  pattern="\d{10}"
+                  aria-describedby="new-reservation-phone-help"
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
+                <p id="new-reservation-phone-help" className="sr-only">{t('Enter a 10-digit contact number.')}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="new-reservation-occasion" className="block text-[11px] text-gray-600 mb-1">{t('Occasion')}</label>
+                <input
+                  id="new-reservation-occasion"
+                  type="text"
+                  placeholder={t('Birthday, Business, VIP...')}
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
               </div>
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
+                <label htmlFor="new-reservation-duration" className="block text-[11px] text-gray-600 mb-1">{t('Estimated Duration')}</label>
                 <input
+                  id="new-reservation-duration"
+                  type="text"
+                  placeholder={t('__hr __min')}
+                  maxLength={20}
+                  aria-describedby="new-reservation-duration-help"
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
+                <p id="new-reservation-duration-help" className="sr-only">{t('Enter duration in hours and minutes.')}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="new-reservation-date-time" className="block text-[11px] text-gray-600 mb-1">{t('Reservation date')}</label>
+                <input
+                  id="new-reservation-date-time"
+                  type="date"
+                  name="Date_time"
+                  value={formData.Date_time}
+                  required
+                  min={getReservationDateBounds().min}
+                  max={getReservationDateBounds().max}
+                  onChange={handleChange}
+                  aria-describedby="new-reservation-date-time-help"
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
+                <p id="new-reservation-date-time-help" className="sr-only">{t('Select a reservation date within the next 10 days.')}</p>
+              </div>
+              <div>
+                <label htmlFor="new-reservation-party-size" className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
+                <input
+                  id="new-reservation-party-size"
                   type="number"
                   name="people_count"
+                  min={1}
+                  max={selectedFormTable ? getTableCapacity(selectedFormTable) : undefined}
+                  required
+                  step={1}
                   value={formData.people_count}
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
@@ -131,23 +357,52 @@ const NewReservationModal = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Assign Table')}</label>
+                <label htmlFor="new-reservation-floor" className="block text-[11px] text-gray-600 mb-1">{t('Floor')}</label>
                 <select
-                  name="Table_id"
-                  value={formData.Table_id}
+                  id="new-reservation-floor"
+                  name="Floor"
+                  value={floorId || ''}
                   onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white"
+                  required
+                  disabled={isLoadingTables || floors.length === 0}
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50"
                 >
-                  <option value={2}>{t('Table')} 2 - {t('Available')}</option>
-                  <option value={5}>{t('Table')} 5 - {t('Available')}</option>
-                  <option value={7}>{t('Table')} 7 - {t('Available')}</option>
+                  <option value="">{t('Select Floor')}</option>
+                  {floors.map((floor: Floor) => (
+                    <option key={floor.Floor_id} value={floor.Floor_id}>{floor.Floor_Name}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Notes')}</label>
+                <label htmlFor="new-reservation-table" className="block text-[11px] text-gray-600 mb-1">{t('Assign Table')}</label>
+                <select
+                  id="new-reservation-table"
+                  name="Table_id"
+                  value={formData.Table_id}
+                  onChange={handleChange}
+                  required
+                  disabled={isLoadingTables || tables.length === 0 || !floorId}
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50"
+                >
+                  <option value={0}>{isLoadingTables ? t('Loading...') : t('Select a table')}</option>
+                  {tables.map((table: Table) => (
+                    <option key={table.Table_id} value={table.Table_id}>
+                      {getTableLabel(table)} · {t('Capacity')}: {getTableCapacity(table)}
+                    </option>
+                  ))}
+                </select>
+                {isTableLoadError && <p className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
+                {!isLoadingTables && !isTableLoadError && floorId > 0 && tables.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
+                )}
+              </div>
+              <div className="col-span-2">
+                <label htmlFor="new-reservation-notes" className="block text-[11px] text-gray-600 mb-1">{t('Notes')}</label>
                 <input
+                  id="new-reservation-notes"
                   type="text"
                   name="Notes"
+                  maxLength={NOTES_MAX_LENGTH}
                   value={formData.Notes}
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
@@ -164,7 +419,7 @@ const NewReservationModal = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isLoadingTables || isTableLoadError || !formData.Table_id}
                 className="flex-1 bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white py-2.5 rounded-md font-medium text-sm shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {isSubmitting ? t('Confirming...') : t('Confirm Reservation')}
@@ -196,7 +451,7 @@ const EditReservationModal = ({
   const [formData, setFormData] = useState<UpdateReservationPayload>({
     id: 0,
     people_count: 1,
-    Table_id: 1,
+    Table_id: 0,
     PaymentStatus: 'UnPaid',
     Notes: '',
   });
@@ -239,8 +494,9 @@ const EditReservationModal = ({
           </h2>
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div>
-              <label className="block text-[11px] text-gray-600 mb-1">{t('Guest Name')}</label>
+              <label htmlFor="edit-reservation-guest-name" className="block text-[11px] text-gray-600 mb-1">{t('Guest Name')}</label>
               <input
+                id="edit-reservation-guest-name"
                 type="text"
                 value={reservation.title ?? ''}
                 disabled
@@ -249,19 +505,21 @@ const EditReservationModal = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
+                <label htmlFor="edit-reservation-party-size" className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
                 <input
+                  id="edit-reservation-party-size"
                   type="number"
                   name="people_count"
+                  min={1}
                   value={formData.people_count}
                   onChange={handleChange}
-                  min={1}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Assign Table')}</label>
+                <label htmlFor="edit-reservation-table" className="block text-[11px] text-gray-600 mb-1">{t('Assign Table')}</label>
                 <select
+                  id="edit-reservation-table"
                   name="Table_id"
                   value={formData.Table_id}
                   onChange={handleChange}
@@ -277,8 +535,9 @@ const EditReservationModal = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Payment Status')}</label>
+                <label htmlFor="edit-reservation-payment-status" className="block text-[11px] text-gray-600 mb-1">{t('Payment Status')}</label>
                 <select
+                  id="edit-reservation-payment-status"
                   name="PaymentStatus"
                   value={formData.PaymentStatus}
                   onChange={handleChange}
@@ -289,8 +548,9 @@ const EditReservationModal = ({
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] text-gray-600 mb-1">{t('Notes')}</label>
+                <label htmlFor="edit-reservation-notes" className="block text-[11px] text-gray-600 mb-1">{t('Notes')}</label>
                 <input
+                  id="edit-reservation-notes"
                   type="text"
                   name="Notes"
                   value={formData.Notes}
@@ -385,25 +645,72 @@ export default function ReservationPage() {
   const [selectedForInline, setSelectedForInline] = useState<Reservation | null>(null);
   const [inlineForm, setInlineForm] = useState({
     title: '',
+    customer_mobile: '',
     people_count: 1,
     Date_time: '',
+    Floor: 0,
     Table_id: 1,
+    Capacity_count: 4,
     Notes: '',
     PaymentStatus: 'UnPaid' as 'Paid' | 'UnPaid',
   });
+  const {
+    floors: reservationFloors,
+    tables: inlineTables,
+    isLoading: isLoadingInlineTables,
+    isError: isInlineTableLoadError,
+  } = useReservationTableOptions(inlineForm.Floor);
 
   const { data: reservations = [], isLoading } = useGetReservationsQuery();
   const [createReservation, { isLoading: isCreating }] = useCreateReservationMutation();
   const [updateReservation, { isLoading: isUpdating }] = useUpdateReservationMutation();
   const [deleteReservation, { isLoading: isDeleting }] = useDeleteReservationMutation();
+  const selectedInlineTable = inlineTables.find(
+    (table: Table) => table.Table_id === Number(inlineForm.Table_id),
+  );
+  const inlineExceedsTableCapacity =
+    !selectedForInline &&
+    selectedInlineTable != null &&
+    Number(inlineForm.people_count) > getTableCapacity(selectedInlineTable);
+
+  useEffect(() => {
+    if (selectedForInline || !reservationFloors.length) return;
+    if (reservationFloors.some((floor: Floor) => floor.Floor_id === inlineForm.Floor)) return;
+    setInlineForm((previous) => ({
+      ...previous,
+      Floor: reservationFloors[0].Floor_id,
+      Table_id: 0,
+    }));
+  }, [inlineForm.Floor, reservationFloors, selectedForInline]);
+
+  useEffect(() => {
+    if (selectedForInline || !inlineForm.Floor || isLoadingInlineTables) return;
+    const currentTable = inlineTables.find((table: Table) => table.Table_id === inlineForm.Table_id);
+    if (currentTable) return;
+    const firstTable = inlineTables[0];
+    setInlineForm((previous) => ({
+      ...previous,
+      Table_id: firstTable?.Table_id ?? 0,
+      Capacity_count: firstTable ? getTableCapacity(firstTable) : previous.Capacity_count,
+    }));
+  }, [
+    inlineForm.Floor,
+    inlineForm.Table_id,
+    inlineTables,
+    isLoadingInlineTables,
+    selectedForInline,
+  ]);
 
   useEffect(() => {
     if (selectedForInline) {
       setInlineForm({
         title: selectedForInline.title ?? '',
+        customer_mobile: selectedForInline.customer_mobile ?? '',
         people_count: selectedForInline.people_count,
         Date_time: selectedForInline.Date_time,
+        Floor: selectedForInline.Floor,
         Table_id: selectedForInline.Table_id,
+        Capacity_count: selectedForInline.Capacity_count,
         Notes: selectedForInline.Notes ?? '',
         PaymentStatus: selectedForInline.PaymentStatus as 'Paid' | 'UnPaid',
       });
@@ -414,9 +721,12 @@ export default function ReservationPage() {
     setSelectedForInline(null);
     setInlineForm({
       title: '',
+      customer_mobile: '',
       people_count: 1,
       Date_time: '',
-      Table_id: 1,
+      Floor: reservationFloors[0]?.Floor_id ?? 0,
+      Table_id: 0,
+      Capacity_count: 4,
       Notes: '',
       PaymentStatus: 'UnPaid',
     });
@@ -428,7 +738,7 @@ export default function ReservationPage() {
       setIsModalOpen(false);
       toast.success(t('Reservation created successfully!'), { style: toastStyle });
     } catch (error: any) {
-      toast.error(error?.data?.message || t('Failed to create reservation.'), {
+      toast.error(error?.data?.error || error?.data?.message || t('Failed to create reservation.'), {
         style: toastStyle,
       });
     }
@@ -473,20 +783,58 @@ export default function ReservationPage() {
         Notes: inlineForm.Notes,
       });
     } else {
+      const guestName = inlineForm.title.trim();
+      if (guestName.length < 2 || guestName.length > GUEST_NAME_MAX_LENGTH) {
+        toast.error(t('Guest name must be between 2 and 100 characters.'), {
+          style: toastStyle,
+        });
+        return;
+      }
+      if (!/^\d{10}$/.test(inlineForm.customer_mobile)) {
+        toast.error(t('Enter a 10-digit contact number.'), { style: toastStyle });
+        return;
+      }
+      if (!isReservationDateAllowed(inlineForm.Date_time)) {
+        toast.error(t('Select a reservation date within the next 10 days.'), {
+          style: toastStyle,
+        });
+        return;
+      }
+      const selectedTable = inlineTables.find(
+        (table: Table) => table.Table_id === Number(inlineForm.Table_id),
+      );
+      if (!selectedTable || selectedTable.Floor_id !== inlineForm.Floor) {
+        toast.error(t('Select a table from the selected floor.'), {
+          style: toastStyle,
+        });
+        return;
+      }
+      if (!Number.isInteger(Number(inlineForm.people_count)) || Number(inlineForm.people_count) < 1) {
+        toast.error(t('Party size must be at least 1.'), { style: toastStyle });
+        return;
+      }
+      if (Number(inlineForm.people_count) > getTableCapacity(selectedTable)) {
+        toast.error(t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
+          capacity: getTableCapacity(selectedTable),
+        }), {
+          style: toastStyle,
+        });
+        return;
+      }
+
       const payload: CreateReservationPayload = {
         Reservations_online: false,
         Customer_id: 25,
         slots: 'Dinner',
-        slots_time: '07:30 PM - 09:00 PM',
-        title: inlineForm.title || t('Walk-in Guest'),
-        Floor: 1,
-        Capacity_count: Number(inlineForm.people_count) || 4,
+        slots_time: RESERVATION_SLOT_TIME,
+        title: guestName,
+        customer_mobile: inlineForm.customer_mobile,
+        Floor: selectedTable.Floor_id,
+        Capacity_count: getTableCapacity(selectedTable),
         people_count: Number(inlineForm.people_count) || 1,
         PaymentStatus: inlineForm.PaymentStatus,
-        Table_id: Number(inlineForm.Table_id),
-        Date_time: inlineForm.Date_time
-          ? new Date(inlineForm.Date_time).toISOString()
-          : new Date().toISOString(),
+        Table_id: selectedTable.Table_id,
+        Date_time: inlineForm.Date_time,
         Notes: inlineForm.Notes,
         Status: true,
       };
@@ -627,88 +975,173 @@ export default function ReservationPage() {
             <form onSubmit={handleInlineSubmit} className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Guest name')}</label>
+                  <label htmlFor="inline-reservation-guest-name" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Guest name')}</label>
                   <input
+                    id="inline-reservation-guest-name"
                     type="text"
                     value={inlineForm.title}
                     onChange={(e) => setInlineForm((p) => ({ ...p, title: e.target.value }))}
                     placeholder={t('Mohammed Al-Farsi')}
+                    required={!selectedForInline}
+                    minLength={2}
+                    maxLength={GUEST_NAME_MAX_LENGTH}
                     disabled={!!selectedForInline}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Phone')}</label>
+                  <label htmlFor="inline-reservation-phone" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Phone')}</label>
                   <input
-                    type="text"
-                    placeholder={t('+974 55-000-1234')}
+                    id="inline-reservation-phone"
+                    type="tel"
+                    value={inlineForm.customer_mobile}
+                    onChange={(e) => setInlineForm((p) => ({
+                      ...p,
+                      customer_mobile: normalizePhone(e.target.value),
+                    }))}
+                    placeholder={t('10-digit phone number')}
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    required={!selectedForInline}
+                    maxLength={PHONE_DIGIT_COUNT}
+                    pattern="\d{10}"
                     disabled={!!selectedForInline}
+                    aria-describedby="inline-reservation-phone-help"
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
+                  <p id="inline-reservation-phone-help" className="sr-only">{t('Enter a 10-digit contact number.')}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Occasion')}</label>
+                  <label htmlFor="inline-reservation-occasion" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Occasion')}</label>
                   <input
+                    id="inline-reservation-occasion"
                     type="text"
                     placeholder={t('Birthday, Business, VIP...')}
+                    maxLength={100}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Estimated Duration')}</label>
+                  <label htmlFor="inline-reservation-duration" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Estimated Duration')}</label>
                   <input
+                    id="inline-reservation-duration"
                     type="text"
                     placeholder={t('__hr __min')}
+                    maxLength={20}
+                    aria-describedby="inline-reservation-duration-help"
                     className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-400 focus:outline-none focus:border-purple-500"
                   />
+                  <p id="inline-reservation-duration-help" className="sr-only">{t('Enter duration in hours and minutes.')}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Date & Time')}</label>
+                  <label htmlFor="inline-reservation-date-time" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Reservation date')}</label>
                   <input
-                    type="datetime-local"
-                    value={inlineForm.Date_time ? new Date(inlineForm.Date_time).toISOString().slice(0, 16) : ''}
+                    id="inline-reservation-date-time"
+                    type="date"
+                    value={getDateInputValue(inlineForm.Date_time)}
+                    min={getReservationDateBounds().min}
+                    max={getReservationDateBounds().max}
+                    required={!selectedForInline}
                     onChange={(e) => setInlineForm((p) => ({ ...p, Date_time: e.target.value }))}
                     disabled={!!selectedForInline}
+                    aria-describedby="inline-reservation-date-time-help"
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
+                  <p id="inline-reservation-date-time-help" className="sr-only">{t('Select a reservation date within the next 10 days.')}</p>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Party Size')}</label>
+                  <label htmlFor="inline-reservation-party-size" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Party Size')}</label>
                   <input
+                    id="inline-reservation-party-size"
                     type="number"
                     min={1}
+                    max={selectedInlineTable ? getTableCapacity(selectedInlineTable) : undefined}
+                    required={!selectedForInline}
+                    step={1}
                     value={inlineForm.people_count}
                     onChange={(e) => setInlineForm((p) => ({ ...p, people_count: Number(e.target.value) }))}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500"
                   />
+                  {inlineExceedsTableCapacity && (
+                    <p role="alert" className="mt-1 text-xs text-red-600">
+                      {t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
+                        capacity: getTableCapacity(selectedInlineTable),
+                      })}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Assign Table')}</label>
+                  <label htmlFor="inline-reservation-floor" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Floor')}</label>
                   <select
-                    value={inlineForm.Table_id}
-                    onChange={(e) => setInlineForm((p) => ({ ...p, Table_id: Number(e.target.value) }))}
-                    className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white"
+                    id="inline-reservation-floor"
+                    value={inlineForm.Floor || ''}
+                    required={!selectedForInline}
+                    onChange={(e) => setInlineForm((previous) => ({
+                      ...previous,
+                      Floor: Number(e.target.value),
+                      Table_id: 0,
+                    }))}
+                    disabled={!!selectedForInline || isLoadingInlineTables || reservationFloors.length === 0}
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white disabled:bg-gray-50"
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((t_item) => (
-                      <option key={t_item} value={t_item}>{t('Table')} {t_item} {t_item === 2 ? `- ${t('Available')}` : ''}</option>
+                    <option value="">{t('Select Floor')}</option>
+                    {reservationFloors.map((floor: Floor) => (
+                      <option key={floor.Floor_id} value={floor.Floor_id}>{floor.Floor_Name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">{t('Notes')}</label>
+                  <label htmlFor="inline-reservation-table" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Assign Table')}</label>
+                  <select
+                    id="inline-reservation-table"
+                    value={inlineForm.Table_id}
+                    required={!selectedForInline}
+                    onChange={(e) => {
+                      const selectedTable = inlineTables.find(
+                        (table: Table) => table.Table_id === Number(e.target.value),
+                      );
+                      setInlineForm((previous) => ({
+                        ...previous,
+                        Table_id: Number(e.target.value),
+                        Capacity_count: selectedTable
+                          ? getTableCapacity(selectedTable)
+                          : previous.Capacity_count,
+                      }));
+                    }}
+                    disabled={isLoadingInlineTables || inlineTables.length === 0 || !inlineForm.Floor}
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white disabled:bg-gray-50"
+                  >
+                    <option value={0}>{isLoadingInlineTables ? t('Loading...') : t('Select a table')}</option>
+                    {inlineTables.map((table: Table) => (
+                      <option key={table.Table_id} value={table.Table_id}>
+                        {getTableLabel(table)} · {t('Capacity')}: {getTableCapacity(table)}
+                      </option>
+                    ))}
+                  </select>
+                  {isInlineTableLoadError && <p className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
+                  {!isLoadingInlineTables && !isInlineTableLoadError && inlineForm.Floor > 0 && inlineTables.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="inline-reservation-notes" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Notes')}</label>
                   <input
+                    id="inline-reservation-notes"
                     type="text"
                     value={inlineForm.Notes}
                     onChange={(e) => setInlineForm((p) => ({ ...p, Notes: e.target.value }))}
+                    maxLength={NOTES_MAX_LENGTH}
                     placeholder={t('Allergies: nuts')}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500"
                   />
@@ -717,7 +1150,11 @@ export default function ReservationPage() {
 
               <button
                 type="submit"
-                disabled={isInlineSubmitting}
+                disabled={
+                  isInlineSubmitting ||
+                  (!selectedForInline &&
+                    (isLoadingInlineTables || isInlineTableLoadError || !inlineForm.Table_id))
+                }
                 className="mt-4 w-full bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white py-3 rounded-md font-semibold text-sm shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {isInlineSubmitting ? t('Confirming...') : t('Confirm Reservation')}

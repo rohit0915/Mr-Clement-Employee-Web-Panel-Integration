@@ -138,6 +138,19 @@
   "e.g., #7": "e.g., #7",
   "Drink's Name": "Drink's Name",
   "e.g., Mojito": "e.g., Mojito",
+  "Available drinks": "Available drinks",
+  "Loading drinks...": "Loading drinks...",
+  "Could not load drinks.": "Could not load drinks.",
+  "Type at least 3 characters to search.": "Type at least 3 characters to search.",
+  "No matching drinks.": "No matching drinks.",
+  "No drinks in the catalog.": "No drinks in the catalog.",
+  "Showing first 30 matches. Refine your search.": "Showing first 30 matches. Refine your search.",
+  "Serving size not specified": "Serving size not specified",
+  "Availability not specified": "Availability not specified",
+  "Select a drink from the catalog or clear the drink name.": "Select a drink from the catalog or clear the drink name.",
+  "Select a drink from the catalog.": "Select a drink from the catalog.",
+  "Bar tab created successfully.": "Bar tab created successfully.",
+  "Drink added successfully.": "Drink added successfully.",
   "No matching drink — will open empty tab.": "No matching drink — will open empty tab.",
   "Modifier": "Modifier",
   "Select modifier": "Select modifier",
@@ -160,7 +173,23 @@
   "New Reservation": "New Reservation",
   "Edit Reservation": "Edit Reservation",
   "Guest Name": "Guest Name",
+  "Enter a phone number including its country code.": "Enter a phone number including its country code.",
+  "Enter duration in hours and minutes.": "Enter duration in hours and minutes.",
+  "Enter date and time in ISO 8601 format.": "Enter date and time in ISO 8601 format.",
+  "Choose a local date and time.": "Choose a local date and time.",
+  "Reservation date": "Reservation date",
+  "Select a reservation date within the next 10 days.": "Select a reservation date within the next 10 days.",
+  "Select Floor": "Select floor",
+  "Select a table": "Select a table",
+  "Capacity": "Capacity",
+  "Could not load tables for this floor.": "Could not load tables for this floor.",
+  "No tables are configured for this floor.": "No tables are configured for this floor.",
+  "Select a table from the selected floor.": "Select a table from the selected floor.",
+  "Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.": "Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.",
   "Phone": "+974 55-000-1234",
+  "10-digit phone number": "10-digit phone number",
+  "Enter a 10-digit contact number.": "Enter a 10-digit contact number.",
+  "Guest name must be between 2 and 100 characters.": "Guest name must be between 2 and 100 characters.",
   "Occasion": "Occasion",
   "Birthday, Business, VIP...": "Birthday, Business, VIP...",
   "Estimated Duration": "Estimated Duration",
@@ -359,6 +388,9 @@
 
   "This Week / All Time": "This Week / All Time",
   "This Week": "This Week",
+  "All Time": "All Time",
+  "Report period": "Report period",
+  "Date range unavailable.": "Date range unavailable.",
   "Total Sales": "Total Sales",
   "Total Orders": "Total Orders",
   "Customer Satisfaction": "Customer Satisfaction",
@@ -434,6 +466,9 @@
   "Swap ID": "Swap ID",
   "Team Scheduled": "Team Scheduled",
   "No team members scheduled.": "No team members scheduled.",
+  "Name unavailable": "Name unavailable",
+  "Time unavailable": "Time unavailable",
+  "Role unavailable": "Role unavailable",
   "Request Shift Swap": "Request Shift Swap",
   "Your Shift": "Your Shift",
   "Swap With": "Swap With",
@@ -464,8 +499,14 @@
   "Add Guest": "Add Guest",
   
   "Guest name is required.": "Guest name is required.",
+  "Guest name must be between 2 and 100 characters.": "Guest name must be between 2 and 100 characters.",
   "Contact number is required.": "Contact number is required.",
+  "Enter a 10-digit contact number.": "Enter a 10-digit contact number.",
   "Pick a date and time.": "Pick a date and time.",
+  "Select a reservation date within the next 10 days.": "Select a reservation date within the next 10 days.",
+  "Select an hourly slot starting at 9:00 AM.": "Select an hourly slot starting at 9:00 AM.",
+  "Pick a valid date and time.": "Pick a valid date and time.",
+  "Select a valid table.": "Select a valid table.",
   "Party size must be at least 1.": "Party size must be at least 1.",
   "Select a table.": "Select a table.",
   "That table is not available for this slot.": "That table is not available for this slot.",
@@ -652,10 +693,3 @@
 }
 
  
-
-
-
-
-
-
-

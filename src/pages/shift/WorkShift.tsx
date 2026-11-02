@@ -14,6 +14,11 @@ import {
 } from '../../redux/api/shiftApiSlice';
 import Loader from '@/components/Loader';
 
+type ShiftRecord = Record<string, unknown>;
+
+const isShiftRecord = (value: unknown): value is ShiftRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export default function WorkShift() {
   const { t } = useTranslation(); // ✅ Added i18n hook
 
@@ -187,7 +192,7 @@ export default function WorkShift() {
 
   const currentShift = dashboardData?.current_shift ?? null;
   const upcomingShifts = dashboardData?.upcoming_shifts ?? [];
-  const teamSchedule = dashboardData?.team_schedule ?? [];
+  const teamSchedule = Array.isArray(dashboardData?.team_schedule) ? dashboardData.team_schedule : [];
   const swapRequests = dashboardData?.incoming_swap_requests ?? [];
   const outgoingSwapRequests = dashboardData?.outgoing_swap_requests ?? [];
 
@@ -201,6 +206,62 @@ export default function WorkShift() {
       full_name: `${t('Employee')} #${employeeId}`,
       profile_image: '',
     };
+  };
+
+  const getMeaningfulText = (...values: unknown[]): string | null => {
+    for (const value of values) {
+      if (typeof value !== 'string') continue;
+      const text = value.trim();
+      if (!text || /^(name|time|role|n\/?a|unknown|undefined|null|[-—])$/i.test(text)) continue;
+      return text;
+    }
+    return null;
+  };
+
+  const getRecordName = (record: unknown): string | null => {
+    if (!isShiftRecord(record)) return null;
+    const firstAndLastName = [record.first_name, record.last_name]
+      .filter((name: unknown) => typeof name === 'string' && name.trim())
+      .join(' ');
+    return getMeaningfulText(record.full_name, record.employee_name, record.name, firstAndLastName);
+  };
+
+  const getScheduleTime = (member: unknown): string => {
+    if (!isShiftRecord(member)) return t('Time unavailable');
+    const shift = isShiftRecord(member.shift)
+      ? member.shift
+      : isShiftRecord(member.schedule)
+        ? member.schedule
+        : {};
+    const formatScheduleValue = (value: unknown): string | null => {
+      const text = getMeaningfulText(typeof value === 'string' ? value : '');
+      if (!text) return null;
+      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
+        const [hours, minutes] = text.split(':').map(Number);
+        return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      }
+      const parsedDate = new Date(text);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        return parsedDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      }
+      return text;
+    };
+
+    const start = formatScheduleValue(
+      member.start_at ?? member.start_time ?? shift.start_at ?? shift.start_time,
+    );
+    const end = formatScheduleValue(
+      member.end_at ?? member.end_time ?? shift.end_at ?? shift.end_time,
+    );
+    if (start && end) return `${start} - ${end}`;
+
+    return (
+      formatScheduleValue(member.time ?? shift.time) ??
+      t('Time unavailable')
+    );
   };
 
   return (
@@ -512,27 +573,62 @@ export default function WorkShift() {
             <div className="flex flex-col gap-3 overflow-y-auto custom-vertical-scroll pr-3 flex-1">
               {teamSchedule.length > 0 ? (
                 teamSchedule.map((member: any, idx: number) => {
-                  const info = getEmployeeInfo(member.employee_id);
+                  const employeeId =
+                    member.employee_id ??
+                    member.employee?.employee_id ??
+                    member.user?.employee_id;
+                  const coworker = coworkers.find(
+                    (person: any) =>
+                      employeeId != null &&
+                      String(person.employee_id) === String(employeeId),
+                  );
+                  const hasName = Boolean(
+                    getRecordName(member) ??
+                    getRecordName(member.employee) ??
+                    getRecordName(member.user) ??
+                    getRecordName(coworker),
+                  );
+                  const name =
+                    getRecordName(member) ??
+                    getRecordName(member.employee) ??
+                    getRecordName(member.user) ??
+                    getRecordName(coworker) ??
+                    t('Name unavailable');
+                  const profileImage =
+                    member.profile_image ??
+                    member.employee?.profile_image ??
+                    member.user?.profile_image ??
+                    coworker?.profile_image;
                   return (
                     <div
-                      key={member._id || idx}
+                      key={member._id || member.employee_shift_id || member.shift_id || idx}
                       className="flex items-center justify-between border border-gray-100 rounded-xl p-3 shadow-sm bg-white shrink-0"
                     >
                       <div className="flex items-center gap-3">
-                        <img
-                          src={info.profile_image || 'https://i.pravatar.cc/150?img=11'}
-                          alt="avatar"
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
+                        {profileImage ? (
+                          <img
+                            src={profileImage}
+                            alt=""
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            aria-hidden="true"
+                            className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center font-semibold"
+                          >
+                            {hasName ? name.charAt(0).toUpperCase() : '?'}
+                          </div>
+                        )}
                         <div>
-                          <p className="font-semibold text-gray-800 text-sm">{info.full_name}</p>
+                          <p className="font-semibold text-gray-800 text-sm">{name}</p>
                           <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                            <FiClock className="w-3 h-3" /> {formatTime(member.start_at)} - {formatTime(member.end_at)}
+                            <FiClock className="w-3 h-3" /> {getScheduleTime(member)}
                           </p>
                         </div>
                       </div>
                       <span className="bg-[#fdf2f4] text-[#c9516b] px-3 py-1.5 rounded-full text-xs font-medium">
-                        {member.role || t('Role')}
+                        {getMeaningfulText(member.role, member.employee?.role, member.user?.role) ??
+                          t('Role unavailable')}
                       </span>
                     </div>
                   );

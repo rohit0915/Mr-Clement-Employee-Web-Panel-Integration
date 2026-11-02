@@ -14,7 +14,31 @@ interface ReserveTableModalProps {
   floorName?: string;
 }
 
-const DURATION_OPTIONS = [60, 90, 120] as const;
+const DURATION_OPTIONS = [60] as const;
+const SLOT_START_HOUR = 9;
+const RESERVATION_WINDOW_DAYS = 10;
+
+const formatSlotTime = (minutesAfterMidnight: number): string => {
+  const hour = Math.floor(minutesAfterMidnight / 60) % 24;
+  const minutes = minutesAfterMidnight % 60;
+  const period = hour < 12 ? "AM" : "PM";
+  const displayHour = hour % 12 || 12;
+  return `${String(displayHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${period}`;
+};
+
+const getDateBounds = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastBookableDay = new Date(today);
+  lastBookableDay.setDate(lastBookableDay.getDate() + RESERVATION_WINDOW_DAYS);
+  const toDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  return { min: toDateString(today), max: toDateString(lastBookableDay) };
+};
 
 /** True only if the backend says the table is free AND big enough. */
 const isTableSelectable = (t: FloorMapTable): boolean =>
@@ -37,7 +61,7 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
   const [phone, setPhone] = useState("");
   const [dateStr, setDateStr] = useState(""); // YYYY-MM-DD
   const [timeStr, setTimeStr] = useState(""); // HH:mm
-  const [duration, setDuration] = useState<number>(90);
+  const [duration, setDuration] = useState<number>(60);
   const [partySize, setPartySize] = useState<number | "">("");
   const [selectedTable, setSelectedTable] = useState<FloorMapTable | null>(
     null
@@ -49,6 +73,12 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
     if (!dateStr || !timeStr) return "";
     return `${dateStr}T${timeStr}:00+05:30`;
   }, [dateStr, timeStr]);
+  const slotsTime = useMemo(() => {
+    if (!timeStr) return "";
+    const [hour, minute] = timeStr.split(":").map(Number);
+    const startMinutes = hour * 60 + minute;
+    return `${formatSlotTime(startMinutes)} - ${formatSlotTime(startMinutes + duration)}`;
+  }, [duration, timeStr]);
 
   const canQuery =
     open && Boolean(dateTime) && partySize !== "" && Boolean(floorId);
@@ -80,7 +110,7 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
       setPhone("");
       setDateStr("");
       setTimeStr("");
-      setDuration(90);
+      setDuration(60);
       setPartySize("");
       setSelectedTable(null);
       setError(null);
@@ -91,10 +121,17 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
     setError(null);
 
     // Frontend validation
-    if (!name.trim()) return setError(t("Guest name is required."));
-    if (!phone.trim()) return setError(t("Contact number is required."));
+    if (name.trim().length < 2 || name.trim().length > 100)
+      return setError(t("Guest name must be between 2 and 100 characters."));
+    if (!/^\d{10}$/.test(phone))
+      return setError(t("Enter a 10-digit contact number."));
     if (!dateTime) return setError(t("Pick a date and time."));
-    if (partySize === "" || Number(partySize) < 1)
+    if (!dateStr || dateStr < getDateBounds().min || dateStr > getDateBounds().max)
+      return setError(t("Select a reservation date within the next 10 days."));
+    const [selectedHour, selectedMinute] = timeStr.split(":").map(Number);
+    if (selectedHour < SLOT_START_HOUR || selectedMinute !== 0)
+      return setError(t("Select an hourly slot starting at 9:00 AM."));
+    if (partySize === "" || !Number.isInteger(Number(partySize)) || Number(partySize) < 1)
       return setError(t("Party size must be at least 1."));
     if (!selectedTable) return setError(t("Select a table."));
     if (!isTableSelectable(selectedTable))
@@ -106,7 +143,8 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
     try {
       await createReservation({
         guest_name: name.trim(),
-        guest_phone: phone.trim(),
+        guest_phone: phone,
+        slots_time: slotsTime,
         date_time: dateTime,
         party_size: Number(partySize),
         floor_id: floorId,
@@ -186,30 +224,45 @@ const ReserveTableModal: React.FC<ReserveTableModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('Person Name')}
+              required
+              minLength={2}
+              maxLength={100}
               className="bg-[#F9F5F9] px-4 py-3 rounded-lg text-sm outline-none w-full"
             />
             <input
               type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
               placeholder={t('Contact No')}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              required
+              maxLength={10}
+              pattern="\d{10}"
               className="bg-[#F9F5F9] px-4 py-3 rounded-lg text-sm outline-none w-full"
             />
             <input
               type="date"
               value={dateStr}
               onChange={(e) => setDateStr(e.target.value)}
+              min={getDateBounds().min}
+              max={getDateBounds().max}
+              required
               className="bg-[#F9F5F9] px-4 py-3 rounded-lg text-sm outline-none w-full"
             />
             <input
               type="time"
               value={timeStr}
               onChange={(e) => setTimeStr(e.target.value)}
+              min="09:00"
+              step={60 * 60}
+              required
               className="bg-[#F9F5F9] px-4 py-3 rounded-lg text-sm outline-none w-full"
             />
             <input
               type="number"
               min={1}
+              step={1}
               value={partySize}
               onChange={(e) =>
                 setPartySize(

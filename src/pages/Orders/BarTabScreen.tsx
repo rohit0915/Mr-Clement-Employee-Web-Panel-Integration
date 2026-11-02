@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next'; // ✅ Added i18n
+import toast from 'react-hot-toast';
 import {
   useGetAllBarTabsQuery,
   useCreateBarTabMutation,
@@ -38,6 +39,212 @@ interface Props {
 const formatMoney = (amount: number, currency = 'XOF') =>
   `${Number(amount || 0).toLocaleString()} ${currency}`;
 
+const getResponseMessage = (response: unknown): string | undefined => {
+  if (!response || typeof response !== 'object') return undefined;
+  const body = response as Record<string, unknown>;
+  const data = body.data;
+  const message =
+    body.message ??
+    (data && typeof data === 'object'
+      ? (data as Record<string, unknown>).message
+      : undefined);
+
+  return typeof message === 'string' && message.trim() ? message : undefined;
+};
+
+interface DrinkCatalogItem {
+  id: number;
+  name: string;
+  price: number;
+  servingSize: string;
+  availability: string;
+  available: boolean;
+}
+
+const getDrinkAvailability = (item: any) => {
+  const value =
+    item.available ??
+    item.is_available ??
+    item.Available ??
+    item.availability ??
+    item.status ??
+    item.Status;
+  if (value === undefined || value === null || value === '') {
+    return { label: 'Availability not specified', available: true };
+  }
+  const normalized = String(value).toLowerCase();
+  const available =
+    value !== false &&
+    value !== 0 &&
+    !['false', '0', 'unavailable', 'out of stock', 'inactive', 'disabled'].includes(normalized);
+
+  return { label: available ? 'Available' : 'Unavailable', available };
+};
+
+interface DrinkCatalogSelectorProps {
+  id: string;
+  value: string;
+  drinks: DrinkCatalogItem[];
+  isLoading: boolean;
+  isError: boolean;
+  selectedDrink: DrinkCatalogItem | null;
+  onChange: (value: string) => void;
+  onSelect: (drink: DrinkCatalogItem) => void;
+}
+
+const DrinkCatalogSelector: React.FC<DrinkCatalogSelectorProps> = ({
+  id,
+  value,
+  drinks,
+  isLoading,
+  isError,
+  selectedDrink,
+  onChange,
+  onSelect,
+}) => {
+  const { t } = useTranslation();
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const query = value.trim().toLocaleLowerCase();
+  const isSearching = query.length >= 3;
+  const matches = isSearching
+    ? drinks.filter((drink) => drink.name.toLocaleLowerCase().includes(query))
+    : query.length === 0
+      ? drinks
+      : [];
+  const visibleDrinks = matches.slice(0, 30);
+  const listId = `${id}-options`;
+
+  const moveActiveIndex = (direction: 1 | -1) => {
+    const indexes = visibleDrinks
+      .map((drink, index) => (drink.available ? index : -1))
+      .filter((index) => index >= 0);
+    if (indexes.length === 0) return;
+
+    const currentPosition = indexes.indexOf(activeIndex);
+    const nextPosition = currentPosition < 0
+      ? direction === 1 ? 0 : indexes.length - 1
+      : Math.max(0, Math.min(currentPosition + direction, indexes.length - 1));
+    setActiveIndex(indexes[nextPosition]);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setIsOpen(true);
+      moveActiveIndex(1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveActiveIndex(-1);
+    } else if (event.key === 'Enter' && isOpen && visibleDrinks[activeIndex]) {
+      event.preventDefault();
+      const drink = visibleDrinks[activeIndex];
+      if (drink.available) {
+        onSelect(drink);
+        setIsOpen(false);
+      }
+    } else if (event.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={isOpen}
+        aria-controls={listId}
+        aria-activedescendant={
+          isOpen && visibleDrinks[activeIndex]
+            ? `${listId}-${visibleDrinks[activeIndex].id}`
+            : undefined
+        }
+        value={value}
+        onFocus={() => {
+          setIsOpen(true);
+          setActiveIndex(-1);
+        }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setActiveIndex(-1);
+          setIsOpen(true);
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={t('e.g., Mojito')}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8E24AA]"
+      />
+      {selectedDrink && (
+        <p className="text-[11px] text-gray-600 mt-1" aria-live="polite">
+          {t(selectedDrink.servingSize)} · {formatMoney(selectedDrink.price)} · {t(selectedDrink.availability)}
+        </p>
+      )}
+      {isOpen && (
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={t('Available drinks')}
+          className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
+          {isLoading ? (
+            <p className="px-3 py-2 text-sm text-gray-500" role="status">{t('Loading drinks...')}</p>
+          ) : isError ? (
+            <p className="px-3 py-2 text-sm text-red-600" role="alert">{t('Could not load drinks.')}</p>
+          ) : query.length > 0 && !isSearching ? (
+            <p className="px-3 py-2 text-sm text-gray-500">{t('Type at least 3 characters to search.')}</p>
+          ) : visibleDrinks.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-gray-500">
+              {isSearching ? t('No matching drinks.') : t('No drinks in the catalog.')}
+            </p>
+          ) : (
+            <>
+              {visibleDrinks.map((drink, index) => (
+                <button
+                  type="button"
+                  id={`${listId}-${drink.id}`}
+                  key={drink.id}
+                  role="option"
+                  aria-selected={selectedDrink?.id === drink.id}
+                  disabled={!drink.available}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    if (!drink.available) return;
+                    onSelect(drink);
+                    setIsOpen(false);
+                  }}
+                  className={`block w-full px-3 py-2 text-left text-sm ${
+                    !drink.available
+                      ? 'cursor-not-allowed text-gray-400'
+                      : activeIndex === index
+                        ? 'bg-purple-50'
+                        : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{drink.name}</span>
+                    <span className="shrink-0">{formatMoney(drink.price)}</span>
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {t(drink.servingSize)} · {t(drink.availability)}
+                  </span>
+                </button>
+              ))}
+              {matches.length > visibleDrinks.length && (
+                <p className="px-3 py-2 text-xs text-gray-500">
+                  {t('Showing first 30 matches. Refine your search.')}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   const { t } = useTranslation(); // ✅ Added i18n hook
 
@@ -68,7 +275,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   // ---------- API ----------
   const { data: tabsRes, isLoading: tabsLoading, refetch: refetchTabs } =
     useGetAllBarTabsQuery({ status: 'Open' });
-  const { data: drinksRes } = useGetAllItemsQuery({ type: 'Drink', category_id: 'all' });
+  const {
+    data: drinksRes,
+    isLoading: drinksLoading,
+    isError: drinksError,
+  } = useGetAllItemsQuery({ type: 'Drink', category_id: 'all' });
   const { data: paymentsRes } = useGetMyPaymentOptionsQuery();
 
   const [createBarTab, { isLoading: creating }] = useCreateBarTabMutation();
@@ -77,13 +288,25 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
   const tabs: BarTab[] = tabsRes?.data || [];
   const drinkItems = useMemo(
-    () =>
-      (drinksRes?.data || []).map((it: any) => ({
+    () => (drinksRes?.data || []).map((it: any) => {
+      const { label, available } = getDrinkAvailability(it);
+      return {
         id: Number(it.Items_id),
-        name: it['item-name'] || it.Title,
-        price: Number(it['item-price'] || it.Price || 0),
-        categoryName: it.Category?.Name || '',
-      })),
+        name: String(it['item-name'] || it.Title || ''),
+        price: Number(it['item-price'] ?? it.Price ?? 0),
+        servingSize: String(
+          it.serving_size ??
+            it['serving-size'] ??
+            it['item-size'] ??
+            it.item_size ??
+            it.Size ??
+            it.size ??
+            'Serving size not specified'
+        ),
+        availability: label,
+        available,
+      };
+    }).filter((drink: DrinkCatalogItem) => Number.isFinite(drink.id) && drink.name.trim()),
     [drinksRes]
   );
 
@@ -98,6 +321,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   const [clientName, setClientName] = useState('');
   const [tableNo, setTableNo] = useState('');
   const [drinkName, setDrinkName] = useState('');
+  const [selectedDrink, setSelectedDrink] = useState<DrinkCatalogItem | null>(null);
   const [drinkQty, setDrinkQty] = useState(1);
   const [drinksModifiers, setDrinksModifiers] = useState('');
 
@@ -116,38 +340,32 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
     isHappyHourActive ? Math.round(tab.total * 0.9) : tab.total;
 
   // ---------- Handlers ----------
-  const resolveDrink = () => {
-    const q = drinkName.trim().toLowerCase();
-    if (!q) return null;
-    return (
-      drinkItems.find((d:any) => d.name.toLowerCase() === q) ||
-      drinkItems.find((d:any) => d.name.toLowerCase().includes(q)) ||
-      null
-    );
-  };
-
   const handleCreateTab = async () => {
     if (!clientName.trim() || !tableNo.trim()) {
       alert(t('Client name and table number are required.'));
       return;
     }
-    const drink = resolveDrink();
-    const items = drink
+    if (drinkName.trim() && !selectedDrink) {
+      alert(t('Select a drink from the catalog or clear the drink name.'));
+      return;
+    }
+    const items = selectedDrink
       ? [{
-          drink_item_id: drink.id,
+          drink_item_id: selectedDrink.id,
           quantity: Math.max(1, drinkQty),
           modifiers: drinksModifiers ? [drinksModifiers] : [],
         }]
       : [];
 
     try {
-      await createBarTab({
+      const response = await createBarTab({
         client_name: clientName.trim(),
         table_no: tableNo.trim(),
         items,
       }).unwrap();
+      toast.success(getResponseMessage(response) || t('Bar tab created successfully.'));
       setShowAddTabModal(false);
-      setClientName(''); setTableNo(''); setDrinkName(''); setDrinkQty(1); setDrinksModifiers('');
+      setClientName(''); setTableNo(''); setDrinkName(''); setSelectedDrink(null); setDrinkQty(1); setDrinksModifiers('');
       refetchTabs();
     } catch (e: any) {
       console.error(e);
@@ -157,20 +375,20 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
   const handleAddItem = async () => {
     if (!showAddItemModal) return;
-    const drink = resolveDrink();
-    if (!drink) {
-      alert(t('Pick a drink (type a name matching the menu).'));
+    if (!selectedDrink) {
+      alert(t('Select a drink from the catalog.'));
       return;
     }
     try {
-      await addBarTabItem({
+      const response = await addBarTabItem({
         tabId: showAddItemModal.tabId,
-        drink_item_id: drink.id,
+        drink_item_id: selectedDrink.id,
         quantity: Math.max(1, drinkQty),
         modifiers: drinksModifiers ? [drinksModifiers] : [],
       }).unwrap();
+      toast.success(getResponseMessage(response) || t('Drink added successfully.'));
       setShowAddItemModal(null);
-      setDrinkName(''); setDrinkQty(1); setDrinksModifiers('');
+      setDrinkName(''); setSelectedDrink(null); setDrinkQty(1); setDrinksModifiers('');
       refetchTabs();
     } catch (e: any) {
       console.error(e);
@@ -255,7 +473,13 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
           />
 
           <button
-            onClick={() => setShowAddTabModal(true)}
+            onClick={() => {
+              setDrinkName('');
+              setSelectedDrink(null);
+              setDrinkQty(1);
+              setDrinksModifiers('');
+              setShowAddTabModal(true);
+            }}
             className="bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white px-4 py-2 rounded-lg font-bold text-xs shadow-sm hover:opacity-90 transition-all flex items-center gap-1 whitespace-nowrap"
           >
             + {t('Open New Tab')}
@@ -325,9 +549,13 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() =>
-                        setShowAddItemModal({ tabId: tab.Bar_Tab_id, tabName: tab.client_name })
-                      }
+                      onClick={() => {
+                        setDrinkName('');
+                        setSelectedDrink(null);
+                        setDrinkQty(1);
+                        setDrinksModifiers('');
+                        setShowAddItemModal({ tabId: tab.Bar_Tab_id, tabName: tab.client_name });
+                      }}
                       className="flex-1 bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white py-1.5 rounded-md text-xs font-bold shadow-sm hover:opacity-90 transition-all"
                     >
                       + {t('Add Item')}
@@ -414,18 +642,23 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
                 <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("Drink's Name")}</label>
-                  <input
+                  <label htmlFor="new-tab-drink" className="block text-xs font-bold text-gray-600 mb-1">{t("Drink's Name")}</label>
+                  <DrinkCatalogSelector
+                    id="new-tab-drink"
                     value={drinkName}
-                    onChange={(e) => setDrinkName(e.target.value)}
-                    placeholder={t('e.g., Mojito')}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8E24AA]"
+                    drinks={drinkItems}
+                    isLoading={drinksLoading}
+                    isError={drinksError}
+                    selectedDrink={selectedDrink}
+                    onChange={(value) => {
+                      setDrinkName(value);
+                      setSelectedDrink(null);
+                    }}
+                    onSelect={(drink) => {
+                      setSelectedDrink(drink);
+                      setDrinkName(drink.name);
+                    }}
                   />
-                  {drinkName && (
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      {resolveDrink() ? `→ ${resolveDrink()!.name}` : t('No matching drink — will open empty tab.')}
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-600 mb-1">{t('Modifier')}</label>
@@ -495,18 +728,23 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
                 <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("Drink's Name *")}</label>
-                  <input
+                  <label htmlFor="add-tab-item-drink" className="block text-xs font-bold text-gray-600 mb-1">{t("Drink's Name *")}</label>
+                  <DrinkCatalogSelector
+                    id="add-tab-item-drink"
                     value={drinkName}
-                    onChange={(e) => setDrinkName(e.target.value)}
-                    placeholder={t('e.g., House Lager')}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8E24AA]"
+                    drinks={drinkItems}
+                    isLoading={drinksLoading}
+                    isError={drinksError}
+                    selectedDrink={selectedDrink}
+                    onChange={(value) => {
+                      setDrinkName(value);
+                      setSelectedDrink(null);
+                    }}
+                    onSelect={(drink) => {
+                      setSelectedDrink(drink);
+                      setDrinkName(drink.name);
+                    }}
                   />
-                  {drinkName && (
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      {resolveDrink() ? `→ ${resolveDrink()!.name} (${resolveDrink()!.price} XOF)` : t('No matching drink.')}
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-600 mb-1">{t('Modifier')}</label>

@@ -32,6 +32,7 @@ export interface CreateReservationPayload {
   slots: string;
   slots_time: string;
   title: string;
+  customer_mobile: string;
   Floor: number;
   Capacity_count: number;
   people_count: number;
@@ -62,6 +63,7 @@ export interface UpdateReservationPayload {
 export interface CreateEmployeeReservationPayload {
   guest_name: string;
   guest_phone: string;
+  slots_time: string;
   /** ISO 8601 with offset, e.g. "2026-10-25T19:30:00+05:30" */
   date_time: string;
   party_size: number;
