@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useOrderStore } from "@/store/zustandStores";
 import printIcon from "@/assets/order/Print.svg";
 import type { Order } from "@/types/order";
+import { formatOrderMoney, getOrderHistoryBreakdown } from "./orderBreakdown";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://pos-backend-7xuw.onrender.com/';
 
@@ -73,6 +74,7 @@ const PrintBillModal = ({ open, onClose, order }: { open: boolean; onClose: () =
   }, [open, order]);
 
   if (!open) return null;
+  const breakdown = orderDetails ? getOrderHistoryBreakdown(orderDetails) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -115,23 +117,28 @@ const PrintBillModal = ({ open, onClose, order }: { open: boolean; onClose: () =
                     </tr>
                   </thead>
                   <tbody className="text-gray-800">
-                    {orderDetails.items.map((item: any, idx: number) => {
-                      const itemPrice = item.Item?.prices || 0;
-                      const addonPrice = item.Addon?.prices || 0;
-                      const variantPrice = item.Variant?.prices || 0;
-                      const totalPerItem = itemPrice + addonPrice + variantPrice;
-
+                    {breakdown?.items.map((item, index) => {
+                      const unitTotal = item.lineTotal / item.quantity;
                       return (
-                        <tr key={idx} className="border-b border-gray-100 last:border-0">
+                        <tr key={`${item.itemId}-${index}`} className="border-b border-gray-100 last:border-0">
                           <td className="py-3">
-                            <p className="font-medium">{item.Item?.item_name}</p>
-                            {item.Variant && <p className="text-xs text-gray-500">+ {item.Variant.Variants}</p>}
-                            {item.Addon && <p className="text-xs text-gray-500">+ {item.Addon.Addons}</p>}
-                            {item.item_note && <p className="text-xs text-gray-400 italic mt-1">Note: {item.item_note}</p>}
+                            <p className="font-medium">{item.name}</p>
+                            <p className="text-xs text-gray-500">Item: {formatOrderMoney(item.price)} each</p>
+                            {item.variant && (
+                              <p className="text-xs text-gray-500">
+                                + {item.variant.name}: {formatOrderMoney(item.variant.price)} each
+                              </p>
+                            )}
+                            {item.addOns.map((addon) => (
+                              <p className="text-xs text-gray-500" key={addon.id}>
+                                + {addon.name}: {formatOrderMoney(addon.price)} each
+                              </p>
+                            ))}
+                            {item.note && <p className="text-xs text-gray-400 italic mt-1">Note: {item.note}</p>}
                           </td>
-                          <td className="py-3 text-center">{item.item_Quentry}</td>
-                          <td className="py-3 text-right">{totalPerItem.toFixed(2)}</td>
-                          <td className="py-3 text-right font-medium">{(totalPerItem * item.item_Quentry).toFixed(2)}</td>
+                          <td className="py-3 text-center">{item.quantity}</td>
+                          <td className="py-3 text-right">{formatOrderMoney(unitTotal)}</td>
+                          <td className="py-3 text-right font-medium">{formatOrderMoney(item.lineTotal)}</td>
                         </tr>
                       );
                     })}
@@ -142,10 +149,31 @@ const PrintBillModal = ({ open, onClose, order }: { open: boolean; onClose: () =
               {/* Totals */}
               <div className="border-t border-dashed border-gray-300 pt-4 flex justify-end">
                 <div className="w-full max-w-xs space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between"><span>Subtotal:</span><span>{orderDetails.SubTotal?.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>Tax:</span><span>{orderDetails.Tax?.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>Persisted subtotal:</span><span>{formatOrderMoney(breakdown?.subtotal ?? 0)}</span></div>
+                  <div className="flex justify-between"><span>Tax:</span><span>{formatOrderMoney(breakdown?.tax ?? 0)}</span></div>
+                  {breakdown?.discount !== 0 && (
+                    <div className="flex justify-between"><span>Discount:</span><span>-{formatOrderMoney(breakdown?.discount ?? 0)}</span></div>
+                  )}
+                  {breakdown?.serviceCharge !== 0 && (
+                    <div className="flex justify-between"><span>Service charge:</span><span>{formatOrderMoney(breakdown?.serviceCharge ?? 0)}</span></div>
+                  )}
+                  {breakdown?.fees !== 0 && (
+                    <div className="flex justify-between"><span>Fees:</span><span>{formatOrderMoney(breakdown?.fees ?? 0)}</span></div>
+                  )}
+                  {breakdown && Math.abs(breakdown.subtotalAdjustment) >= 0.01 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Unitemized subtotal difference:</span>
+                      <span>{formatOrderMoney(breakdown.subtotalAdjustment)}</span>
+                    </div>
+                  )}
+                  {breakdown && Math.abs(breakdown.totalAdjustment) >= 0.01 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Unitemized total adjustment:</span>
+                      <span>{formatOrderMoney(breakdown.totalAdjustment)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold text-gray-900 text-lg pt-2 border-t border-gray-200">
-                    <span>Total:</span><span>{orderDetails.Total?.toFixed(2)} {orderDetails.currency || "XOF"}</span>
+                    <span>Persisted total:</span><span>{formatOrderMoney(breakdown?.total ?? 0)}</span>
                   </div>
                 </div>
               </div>

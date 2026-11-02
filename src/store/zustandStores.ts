@@ -227,6 +227,14 @@ export interface OrderFlowStoreState {
   clearWaitlistDraft: () => void;
 }
 
+const getOrderLineId = (item: OrderItem): string =>
+  JSON.stringify([
+    item.itemId,
+    item.size ?? "",
+    item.variantId ?? "",
+    (item.addOns ?? []).map((addon) => [addon.id, addon.name, addon.price]),
+  ]);
+
 // ==========================================
 // --- 3. USER STORE ---
 // ==========================================
@@ -519,18 +527,19 @@ export const useOrderFlowStore = create<OrderFlowStoreState>()(
       }),
 
       addItemToOrder: (item) => set((state) => {
+        const orderItem = { ...item, lineId: item.lineId ?? getOrderLineId(item) };
         if (!state.currentOrder) {
           return {
             currentOrder: {
               tableId: null,
               floor: "F-01",
               persons: 1,
-              items: [{ ...item, quantity: item.quantity || 1 }],
+              items: [{ ...orderItem, quantity: item.quantity || 1 }],
             },
           };
         }
         const existingIdx = state.currentOrder.items.findIndex(
-          (i) => i.itemId === item.itemId && i.size === item.size && JSON.stringify(i.addOns) === JSON.stringify(item.addOns)
+          (i) => (i.lineId ?? getOrderLineId(i)) === orderItem.lineId
         );
         if (existingIdx >= 0) {
           const newItems = [...state.currentOrder.items];
@@ -540,7 +549,7 @@ export const useOrderFlowStore = create<OrderFlowStoreState>()(
         return {
           currentOrder: {
             ...state.currentOrder,
-            items: [...state.currentOrder.items, { ...item, quantity: item.quantity || 1 }],
+            items: [...state.currentOrder.items, { ...orderItem, quantity: item.quantity || 1 }],
           },
         };
       }),
@@ -551,7 +560,7 @@ export const useOrderFlowStore = create<OrderFlowStoreState>()(
           currentOrder: {
             ...state.currentOrder,
             items: state.currentOrder.items.map((item) =>
-              item.itemId === itemId ? { ...item, ...updates } : item
+              (item.lineId ?? item.itemId) === itemId ? { ...item, ...updates } : item
             ),
           },
         };
@@ -562,7 +571,9 @@ export const useOrderFlowStore = create<OrderFlowStoreState>()(
         return {
           currentOrder: {
             ...state.currentOrder,
-            items: state.currentOrder.items.filter((item) => item.itemId !== itemId),
+            items: state.currentOrder.items.filter(
+              (item) => (item.lineId ?? item.itemId) !== itemId
+            ),
           },
         };
       }),
@@ -585,18 +596,26 @@ export const useOrderFlowStore = create<OrderFlowStoreState>()(
       clearWaitlistDraft: () => set({ waitlistDraft: null }),
 
       hydrateFromServer: (serverData, floorName = "F-01") => set(() => {
-        const mappedItems = (serverData.items || []).map((si: any) => ({
-          itemId: String(si.item_id),
-          name: si.Item?.item_name || si.item_name || `Item ${si.item_id}`,
-          price: Number(si.Item?.prices || si.prices || 0) + Number(si.Addon?.prices || 0),
-          quantity: Number(si.item_Quentry) || 1,
-          size: si.item_size || null,
-          notes: si.item_note || "",
-          addOns: si.Addon ? [{ id: String(si.Addon.item_Addons_id), name: si.Addon.Addons, price: si.Addon.prices }] : [],
-          serverItemId: si._id,
-          serverItemStatus: si.item_status,
-          preparationStation: "Kitchen",
-        }));
+        const mappedItems = (serverData.items || []).map((si: any) => {
+          const item: OrderItem = {
+            itemId: String(si.item_id),
+            name: si.Item?.item_name || si.item_name || `Item ${si.item_id}`,
+            price: Number(si.Item?.prices || si.prices || 0) + Number(si.Addon?.prices || 0),
+            quantity: Number(si.item_Quentry) || 1,
+            size: si.item_size || si.Variant?.Variants || null,
+            ...(si.item_Variants_id != null
+              ? { variantId: Number(si.item_Variants_id) }
+              : si.Variant?.item_Variants_id != null
+                ? { variantId: Number(si.Variant.item_Variants_id) }
+                : {}),
+            notes: si.item_note || "",
+            addOns: si.Addon ? [{ id: String(si.Addon.item_Addons_id), name: si.Addon.Addons, price: si.Addon.prices }] : [],
+            serverItemId: si._id,
+            serverItemStatus: si.item_status,
+            preparationStation: "Kitchen",
+          };
+          return { ...item, lineId: getOrderLineId(item) };
+        });
 
         return {
           currentOrder: {

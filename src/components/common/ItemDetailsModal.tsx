@@ -1,12 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { OrderItem } from "@/types/order";
 import backIcon from "@/assets/back.svg";
 
 interface ItemDetailsModalProps {
   open: boolean;
   item: OrderItem | null;
+  variants?: { id?: number; name: string }[];
   onClose: () => void;
-  onSelect: (size: string) => void;
+  onSelect: (variant: { size: string; variantId?: number }) => void;
 }
 
 const sizes = ["S", "M", "L"];
@@ -14,11 +15,19 @@ const sizes = ["S", "M", "L"];
 const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
   open,
   item,
+  variants = [],
   onClose,
   onSelect,
 }) => {
   const [selectedSize, setSelectedSize] = useState("S");
   const [showFullDesc, setShowFullDesc] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedSize("S");
+      setShowFullDesc(false);
+    }
+  }, [open, item?.itemId]);
 
   if (!open || !item) return null;
 
@@ -105,7 +114,13 @@ const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
           <button
             className="px-10 py-2 rounded-xl text-white font-semibold bg-gradient-to-r from-[#6A1B9A] to-[#D32F2F] shadow hover:opacity-90 transition-all text-lg"
             onClick={() => {
-              onSelect(selectedSize);
+              const selectedVariant = variants.find(
+                (variant) => variant.name.toUpperCase() === selectedSize,
+              );
+              onSelect({
+                size: selectedSize,
+                ...(selectedVariant?.id != null ? { variantId: selectedVariant.id } : {}),
+              });
               onClose();
             }}
           >

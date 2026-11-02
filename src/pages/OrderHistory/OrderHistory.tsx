@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { teamChatTrainingSteps } from '@/walkthrough/steps';
 import * as orderApi from '@/api/orderApi';
 import Loader from '@/components/Loader';
+import { getOrderHistoryBreakdown } from './orderBreakdown';
 
 // Import the separated components
 import OrderCard from './OrderCard';
@@ -165,23 +166,18 @@ const OrderHistory = () => {
   }
 
   const handleCardClick = (order: any) => {
+    const breakdown = getOrderHistoryBreakdown(order);
     setSelectedOrder({
       orderId: order.POS_Order_id,
       status: order.order_status || order.Order_Status,
       tableInfo: { tableId: order.Table?.table_name || 'Takeaway' },
-      items: (order.items || []).map((i: any) => ({
-        itemId: i.item_id,
-        name: i.Item?.item_name || 'Unknown Item',
-        quantity: i.item_Quentry || 1,
-        price: i.Item?.prices || 0,
-        addOns: i.Addon ? [{ name: i.Addon.Addons, price: i.Addon.prices }] : [],
-        variant: i.Variant?.Variants
-      })),
+      items: breakdown.items,
+      breakdown,
       pricingSummary: {
-        taxPercentage: order.SubTotal > 0 ? ((order.Tax / order.SubTotal) * 100) : 0,
-        tax: order.Tax || 0,
-        subtotal: order.SubTotal || 0,
-        totalAmount: order.Total || 0,
+        taxPercentage: breakdown.subtotal > 0 ? (breakdown.tax / breakdown.subtotal) * 100 : 0,
+        tax: breakdown.tax,
+        subtotal: breakdown.subtotal,
+        totalAmount: breakdown.total,
       },
       customerInfo: { name: order.Customer?.Name || '' },
       paymentDetails: { method: 'Cash' },
@@ -354,6 +350,7 @@ const OrderHistory = () => {
             subtotal: selectedOrder.pricingSummary?.subtotal || 0,
             tax: selectedOrder.pricingSummary?.tax || 0,
             total: selectedOrder.pricingSummary?.totalAmount || 0,
+            breakdown: selectedOrder.breakdown,
             orderId: selectedOrder.orderId,
             paymentType: selectedOrder.paymentDetails?.method || 'Cash',
             customerName: selectedOrder.customerInfo?.name || '',

@@ -31,6 +31,7 @@ export interface CreateReservationPayload {
   Customer_id: number;
   slots: string;
   slots_time: string;
+  duration_minutes?: number;
   title: string;
   customer_mobile: string;
   Floor: number;

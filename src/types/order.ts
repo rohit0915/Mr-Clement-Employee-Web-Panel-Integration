@@ -62,10 +62,12 @@ export type OrderStatus =
 
 export interface OrderItem {
   itemId: string;
+  lineId?: string;
   name: string;
   price: number;
   quantity: number;
   size?: string | null;
+  variantId?: number;
   notes?: string;
   description?: string;
   itemType?: string;
@@ -92,6 +94,7 @@ export interface ServerOrderItem {
   item_note?: string | null;
   Item?: { item_id: number; item_name: string; prices: number } | null;
   Addon?: { item_Addons_id: number; Addons: string; prices: number } | null;
+  Variant?: { item_Variants_id: number; Variants: string; prices?: number } | null;
 }
 
 export interface ServerPosOrder {
@@ -160,7 +163,12 @@ export interface PosOrderUpdateBody {
 
 export interface SendToKitchenBody {
   id: number | string;
-  items: { item_id: number; item_note?: string }[];
+  items: {
+    item_id: number;
+    item_Variants_id?: number;
+    item_size?: string | null;
+    item_note?: string;
+  }[];
 }
 
 export interface UpdateOrderItemStatusBody {

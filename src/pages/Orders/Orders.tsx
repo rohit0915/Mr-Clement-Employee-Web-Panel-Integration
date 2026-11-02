@@ -8,6 +8,7 @@ import type { OrderItem } from "@/types/order";
 import {
   useGetAllItemsQuery,
   useGetAllItemTypesQuery,
+  useGetAllItemVariantsQuery,
   useGetAllFloorsQuery,
   useCreateOrderMutation,
   useSendToKitchenMutation,
@@ -117,12 +118,14 @@ const ReceiptModal = ({
   onClose,
   total,
   orderId,
+  items,
   onPrint,
 }: {
   open: boolean;
   onClose: () => void;
   total: number;
   orderId?: string;
+  items: OrderItem[];
   onPrint: () => void;
 }) => {
   const { t } = useTranslation();
@@ -198,6 +201,18 @@ const ReceiptModal = ({
                   {t("Total Payment")}
                 </p>
                 <p className="text-2xl font-bold text-gray-900">{total.toLocaleString()} XOF</p>
+              </div>
+
+              <div className="w-full border-t border-gray-100 pt-4 mb-4">
+                {items.map((item, index) => (
+                  <div
+                    key={item.lineId ?? `${item.itemId}-${index}`}
+                    className="flex justify-between gap-3 text-xs text-gray-700 py-1"
+                  >
+                    <span>{item.quantity} x {item.name} ({item.size || "M"})</span>
+                    <span>{(item.price * item.quantity).toLocaleString()} XOF</span>
+                  </div>
+                ))}
               </div>
 
               <div className="grid grid-cols-2 gap-4 w-full px-2">
@@ -291,6 +306,9 @@ const Orders: React.FC = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   const [modalItem, setModalItem] = useState<any>(null);
+  const [selectedVariant, setSelectedVariant] = useState<{ size: string; variantId?: number }>({
+    size: "S",
+  });
 
   const [isSendingKitchen, setIsSendingKitchen] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -305,6 +323,7 @@ const Orders: React.FC = () => {
 
   const { data: itemTypesData, isFetching: isFetchingTypes } = useGetAllItemTypesQuery({ type: activeMode });
   const { data: itemsData, isLoading: isLoadingItems, isFetching: isFetchingItems } = useGetAllItemsQuery({ type: activeMode });
+  const { data: variantsData } = useGetAllItemVariantsQuery();
   const { data: floorsData } = useGetAllFloorsQuery();
 
   const [createOrder] = useCreateOrderMutation();
@@ -382,6 +401,40 @@ const Orders: React.FC = () => {
       itemTypeName: item.Category?.Name || "General",
     }));
   }, [itemsData]);
+
+  const sizeVariants = useMemo(() => {
+    const normalizeSize = (value: unknown): string | undefined => {
+      if (typeof value !== "string") return undefined;
+      const normalized = value.trim().toUpperCase();
+      if (["S", "SMALL"].includes(normalized)) return "S";
+      if (["M", "MEDIUM"].includes(normalized)) return "M";
+      if (["L", "LARGE"].includes(normalized)) return "L";
+      return undefined;
+    };
+
+    const variants = Array.isArray(variantsData?.data) ? variantsData.data : [];
+    const options = variants.flatMap((variant: any) => {
+      const name = normalizeSize(
+        variant.Variants ?? variant.variant_name ?? variant.name ?? variant.size ?? variant.Size,
+      );
+      if (!name) return [];
+      const idValue =
+        variant.item_Variants_id ??
+        variant.Item_Variants_id ??
+        variant.Variants_id ??
+        variant.variant_id ??
+        variant.id;
+      const id = Number(idValue);
+      return [{
+        name,
+        ...(Number.isInteger(id) && id > 0 ? { id } : {}),
+      }];
+    });
+
+    return ["S", "M", "L"].map((size) =>
+      options.find((variant: { name: string }) => variant.name === size),
+    ).filter((variant): variant is { name: string; id?: number } => variant !== undefined);
+  }, [variantsData]);
 
   const filteredItems = useMemo(() => {
     if (selectedCategory === "all") return menuItems;
@@ -516,7 +569,17 @@ const Orders: React.FC = () => {
     setShowItemModal(true);
   };
 
-  const handleAddonsSave = ({ addons, note }: { addons: string[]; note: string }) => {
+  const handleAddonsSave = ({
+    addons,
+    note,
+    size,
+    variantId,
+  }: {
+    addons: string[];
+    note: string;
+    size: string;
+    variantId?: number;
+  }) => {
     if (!modalItem) return;
     const addonPrice = 20;
     const totalAddonPrice = addons.length * addonPrice;
@@ -524,7 +587,8 @@ const Orders: React.FC = () => {
     const customizedItem = {
       ...modalItem,
       price: modalItem.price + totalAddonPrice, 
-      size: "M",
+      size,
+      ...(variantId != null ? { variantId } : {}),
       addOns: addons.map((a, i) => ({ id: String(i), name: a, price: addonPrice })),
       notes: note,
     };
@@ -584,6 +648,7 @@ const Orders: React.FC = () => {
           item_id: Number(i.itemId),
           item_Quentry: i.quantity,
           item_size: i.size || "M",
+          ...(i.variantId != null ? { item_Variants_id: i.variantId } : {}),
           item_note: i.notes || "",
           item_status: "Preparing",
         })),
@@ -631,6 +696,8 @@ const Orders: React.FC = () => {
         id: orderId,
         items: items.map((i: OrderItem) => ({
           item_id: Number(i.itemId),
+          ...(i.variantId != null ? { item_Variants_id: i.variantId } : {}),
+          item_size: i.size || "M",
           item_note: i.notes || "",
         })),
       }).unwrap();
@@ -1000,7 +1067,7 @@ const Orders: React.FC = () => {
                     {catItems.map((item: OrderItem, idx: number) => (
                       <div key={idx} className="flex flex-col mb-4">
                         <div className="flex justify-between items-start">
-                          <div className="w-8 text-[13px] font-semibold text-gray-800">{item.quantity} xL</div>
+                          <div className="w-8 text-[13px] font-semibold text-gray-800">{item.quantity} x</div>
                           <div className="flex-1 pl-2 pr-2">
                             <div className="text-[13px] font-bold text-gray-900 leading-tight">{item.name}</div>
                             
@@ -1033,7 +1100,7 @@ const Orders: React.FC = () => {
                           <div className="flex items-center border border-gray-200 rounded-md overflow-hidden bg-white shadow-sm h-7">
                             <button
                               disabled={isOrderLocked}
-                              onClick={() => updateOrderItem(item.itemId, { quantity: Math.max(1, item.quantity - 1) })}
+                              onClick={() => updateOrderItem(item.lineId ?? item.itemId, { quantity: Math.max(1, item.quantity - 1) })}
                               className="w-7 h-full flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-50 transition-colors"
                             >
                               <FiMinus size={12} />
@@ -1041,7 +1108,7 @@ const Orders: React.FC = () => {
                             <span className="w-8 text-center text-xs font-semibold">{item.quantity}</span>
                             <button
                               disabled={isOrderLocked}
-                              onClick={() => updateOrderItem(item.itemId, { quantity: item.quantity + 1 })}
+                              onClick={() => updateOrderItem(item.lineId ?? item.itemId, { quantity: item.quantity + 1 })}
                               className="w-7 h-full flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-50 transition-colors"
                             >
                               <FiPlus size={12} />
@@ -1049,7 +1116,7 @@ const Orders: React.FC = () => {
                           </div>
                           <button
                             disabled={isOrderLocked}
-                            onClick={() => removeOrderItem(item.itemId)}
+                            onClick={() => removeOrderItem(item.lineId ?? item.itemId)}
                             className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded-md bg-white hover:bg-red-50 hover:text-red-500 text-gray-500 disabled:opacity-50 transition-colors shadow-sm"
                           >
                             <LuTrash2 size={14} />
@@ -1147,8 +1214,10 @@ const Orders: React.FC = () => {
       <ItemDetailsModal
         open={showItemModal}
         item={modalItem}
+        variants={sizeVariants}
         onClose={() => setShowItemModal(false)}
-        onSelect={() => {
+        onSelect={(variant) => {
+          setSelectedVariant(variant);
           setShowItemModal(false);
           setShowAddonModal(true);
         }}
@@ -1156,7 +1225,8 @@ const Orders: React.FC = () => {
       <AddonsModal
         open={showAddonModal}
         item={modalItem}
-        selectedSize="M"
+        selectedSize={selectedVariant.size}
+        selectedVariantId={selectedVariant.variantId}
         tableId={currentOrder?.tableId || undefined}
         onClose={() => setShowAddonModal(false)}
         onSave={handleAddonsSave}
@@ -1203,6 +1273,7 @@ const Orders: React.FC = () => {
         onPrint={handleActualPrint}
         total={total}
         orderId={currentOrder?.orderId}
+        items={items}
       />
 
       <KitchenSuccessModal

@@ -7,6 +7,7 @@ import {
   // ✅ 1. Import the Lazy PDF Hook
   useLazyGetOrderPdfUrlQuery 
 } from "@/redux/api/quickOrderSlice";
+import { formatOrderMoney, getOrderHistoryBreakdown } from './orderBreakdown';
 
 const getMinutesAgo = (isoString: string | undefined) => {
   if (!isoString) return '';
@@ -168,13 +169,12 @@ interface OrderCardProps {
 }
 
 const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
-  const items = order.items || [];
-  const taxAmount = order.Tax || 0;
-  const subTotal = order.SubTotal || 0;
-  const total = order.Total || 0;
+  const breakdown = getOrderHistoryBreakdown(order);
   const tableType = order.Dining_Option || 'Dine-in';
-
-  const taxPercentage = subTotal > 0 ? ((taxAmount / subTotal) * 100).toFixed(0) : 0;
+  const taxPercentage =
+    breakdown.subtotal > 0
+      ? ((breakdown.tax / breakdown.subtotal) * 100).toFixed(0)
+      : 0;
 
   // ✅ Cancel mutation + modal state
   const [cancelOrder, { isLoading: isCancelling }] = useCancelOrderMutation();
@@ -291,7 +291,7 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
                 : 'Takeaway'}
             </div>
             <div className="text-[11px] text-gray-500 font-medium">
-              {items.length} items
+              {breakdown.items.length} items
             </div>
           </div>
 
@@ -305,17 +305,27 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
 
         {/* ===== Items List ===== */}
         <div className="px-4 py-3 flex-grow space-y-3">
-          {items.map((item: any, i: number) => (
+          {breakdown.items.map((item, index) => (
             <div
-              key={item.item_id + i}
-              className="flex justify-between items-center text-[12px]"
+              key={`${item.itemId}-${index}`}
+              className="text-[12px]"
             >
-              <span className="text-gray-800 font-medium">
-                {item.item_Quentry || 1} x {item.Item?.item_name || 'Unknown Item'}
-              </span>
-              <span className="font-bold text-black">
-                {((item.Item?.prices || 0) * (item.item_Quentry || 1)).toLocaleString()} XOF
-              </span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-800 font-medium">
+                  {item.quantity} x {item.name}
+                </span>
+                <span className="font-bold text-black">{formatOrderMoney(item.lineTotal)}</span>
+              </div>
+              <div className="pl-2 text-[10px] text-gray-500">
+                Item {formatOrderMoney(item.price)} each
+                {item.variant && (
+                  <div>+ {item.variant.name}: {formatOrderMoney(item.variant.price)} each</div>
+                )}
+                {item.addOns.map((addon) => (
+                  <div key={addon.id}>+ {addon.name}: {formatOrderMoney(addon.price)} each</div>
+                ))}
+                {item.note && <div>Note: {item.note}</div>}
+              </div>
             </div>
           ))}
         </div>
@@ -329,17 +339,48 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
         <div className="px-4 pt-3 pb-3 bg-[#FAFAFA]">
           <div className="flex justify-between text-[11px] text-gray-500 mb-1">
             <span>Tax {taxPercentage}%</span>
-            <span>{taxAmount.toFixed(2)} XOF</span>
+            <span>{formatOrderMoney(breakdown.tax)}</span>
           </div>
+          <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+            <span>Persisted subtotal</span>
+            <span>{formatOrderMoney(breakdown.subtotal)}</span>
+          </div>
+          {breakdown.discount !== 0 && (
+            <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+              <span>Discount</span>
+              <span>-{formatOrderMoney(breakdown.discount)}</span>
+            </div>
+          )}
+          {breakdown.serviceCharge !== 0 && (
+            <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+              <span>Service charge</span>
+              <span>{formatOrderMoney(breakdown.serviceCharge)}</span>
+            </div>
+          )}
+          {breakdown.fees !== 0 && (
+            <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+              <span>Fees</span>
+              <span>{formatOrderMoney(breakdown.fees)}</span>
+            </div>
+          )}
+          {Math.abs(breakdown.subtotalAdjustment) >= 0.01 && (
+            <div className="flex justify-between text-[10px] text-amber-700 mb-1">
+              <span>Unitemized subtotal difference</span>
+              <span>{formatOrderMoney(breakdown.subtotalAdjustment)}</span>
+            </div>
+          )}
+          {Math.abs(breakdown.totalAdjustment) >= 0.01 && (
+            <div className="flex justify-between text-[10px] text-amber-700 mb-1">
+              <span>Unitemized total adjustment</span>
+              <span>{formatOrderMoney(breakdown.totalAdjustment)}</span>
+            </div>
+          )}
           <div className="flex justify-between items-end">
             <div className="flex flex-col">
-              <span className="text-[13px] font-extrabold text-gray-900">Subtotal</span>
-              <span className="text-[9px] text-gray-400 font-medium leading-none mt-0.5">
-                Incl. tax
-              </span>
+              <span className="text-[13px] font-extrabold text-gray-900">Total</span>
             </div>
             <span className="text-[13px] font-extrabold text-gray-900">
-              {total.toFixed(2)} XOF
+              {formatOrderMoney(breakdown.total)}
             </span>
           </div>
         </div>

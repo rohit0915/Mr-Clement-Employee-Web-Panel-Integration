@@ -5,9 +5,15 @@ interface AddonsModalProps {
   open: boolean;
   item: OrderItem | null;
   selectedSize?: string; // Made optional to resolve TS errors
+  selectedVariantId?: number;
   tableId?: string;
   onClose: () => void;
-  onSave: (data: { addons: string[]; note: string }) => void;
+  onSave: (data: {
+    addons: string[];
+    note: string;
+    size: string;
+    variantId?: number;
+  }) => void;
 }
 
 const dummyAddons = [
@@ -22,6 +28,8 @@ const dummyAddons = [
 const AddonsModal: React.FC<AddonsModalProps> = ({
   open,
   item,
+  selectedSize = "S",
+  selectedVariantId,
   tableId,
   onClose,
   onSave,
@@ -62,7 +70,7 @@ const AddonsModal: React.FC<AddonsModalProps> = ({
             <div className="flex justify-between">
               <div className="text-sm font-semibold">Draft</div>
               <div className="text-sm font-semibold text-[#3A3A3C]">
-                Table - {tableId || "--"}
+                Table - {tableId || "--"} · Size {selectedSize}
               </div>
             </div>
           </div>
@@ -129,7 +137,12 @@ const AddonsModal: React.FC<AddonsModalProps> = ({
             <button
               className="w-full py-3 rounded-xl text-lg font-semibold text-white bg-gradient-to-b from-[#6A1B9A] to-[#D32F2F] shadow-md hover:opacity-90 transition-all"
               onClick={() => {
-                onSave({ addons: selectedAddons, note });
+                onSave({
+                  addons: selectedAddons,
+                  note,
+                  size: selectedSize,
+                  ...(selectedVariantId != null ? { variantId: selectedVariantId } : {}),
+                });
                 onClose();
               }}
             >

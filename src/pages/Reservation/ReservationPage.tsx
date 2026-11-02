@@ -24,6 +24,23 @@ const RESERVATION_WINDOW_DAYS = 10;
 const PHONE_DIGIT_COUNT = 10;
 const GUEST_NAME_MAX_LENGTH = 100;
 const NOTES_MAX_LENGTH = 500;
+const DEFAULT_RESERVATION_DURATION = 60;
+
+type NewReservationDraft = CreateReservationPayload & {
+  reservation_time: string;
+};
+
+const formatSlotTime = (time: string, durationMinutes: number): string => {
+  const [hours, minutes] = time.split(':').map(Number);
+  const start = hours * 60 + minutes;
+  const formatTime = (totalMinutes: number) => {
+    const hour = Math.floor(totalMinutes / 60) % 24;
+    const minute = totalMinutes % 60;
+    const suffix = hour < 12 ? 'AM' : 'PM';
+    return `${String(hour % 12 || 12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${suffix}`;
+  };
+  return `${formatTime(start)} - ${formatTime(start + durationMinutes)}`;
+};
 
 const normalizePhone = (value: string): string =>
   value.replace(/\D/g, '').slice(0, PHONE_DIGIT_COUNT);
@@ -108,15 +125,16 @@ const NewReservationModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: CreateReservationPayload) => void;
+  onSubmit: (data: CreateReservationPayload) => Promise<boolean>;
   isSubmitting: boolean;
 }) => {
   const { t } = useTranslation(); // ✅ Added i18n hook
   const [floorId, setFloorId] = useState(0);
+  const [isReviewing, setIsReviewing] = useState(false);
   const { floors, tables, isLoading: isLoadingTables, isError: isTableLoadError } =
     useReservationTableOptions(floorId);
 
-  const [formData, setFormData] = useState<CreateReservationPayload>({
+  const [formData, setFormData] = useState<NewReservationDraft>({
     Reservations_online: false,
     Customer_id: 25,
     slots: 'Dinner',
@@ -129,6 +147,8 @@ const NewReservationModal = ({
     PaymentStatus: 'UnPaid',
     Table_id: 0,
     Date_time: '',
+    reservation_time: '19:30',
+    duration_minutes: DEFAULT_RESERVATION_DURATION,
     Notes: 'Allergies: nuts',
     Status: true,
   });
@@ -170,7 +190,14 @@ const NewReservationModal = ({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    const numericFields = ['Customer_id', 'Floor', 'Capacity_count', 'people_count', 'Table_id'];
+    const numericFields = [
+      'Customer_id',
+      'Floor',
+      'Capacity_count',
+      'people_count',
+      'Table_id',
+      'duration_minutes',
+    ];
     if (name === 'Floor') {
       setFloorId(Number(value));
       setFormData((prev) => ({
@@ -215,6 +242,18 @@ const NewReservationModal = ({
       toast.error(t('Select a reservation date within the next 10 days.'));
       return;
     }
+    if (!/^\d{2}:\d{2}$/.test(formData.reservation_time)) {
+      toast.error(t('Select a valid reservation time.'));
+      return;
+    }
+    if (
+      !Number.isInteger(Number(formData.duration_minutes)) ||
+      Number(formData.duration_minutes) < 30 ||
+      Number(formData.duration_minutes) > 480
+    ) {
+      toast.error(t('Duration must be between 30 and 480 minutes.'));
+      return;
+    }
     if (!Number.isInteger(Number(formData.Table_id)) || Number(formData.Table_id) < 1) {
       toast.error(t('Select a valid table.'));
       return;
@@ -235,17 +274,59 @@ const NewReservationModal = ({
       return;
     }
 
-    onSubmit({
-      ...formData,
+    setFormData((previous) => ({
+      ...previous,
       title: guestName,
+      Floor: selectedTable.Floor_id,
+      Capacity_count: getTableCapacity(selectedTable),
+      Table_id: selectedTable.Table_id,
+      people_count: Number(formData.people_count),
+      slots_time: formatSlotTime(formData.reservation_time, Number(formData.duration_minutes)),
+      Date_time: formData.Date_time,
+    }));
+    setIsReviewing(true);
+  };
+
+  const handleConfirmReservation = async () => {
+    const selectedTable = tables.find((table: Table) => table.Table_id === Number(formData.Table_id));
+    if (!selectedTable || selectedTable.Floor_id !== floorId) {
+      setIsReviewing(false);
+      toast.error(t('Select a table from the selected floor.'));
+      return;
+    }
+
+    const { reservation_time: _reservationTime, ...payloadDraft } = formData;
+    const created = await onSubmit({
+      ...payloadDraft,
       customer_mobile: formData.customer_mobile,
       Floor: selectedTable.Floor_id,
       Capacity_count: getTableCapacity(selectedTable),
-      Table_id: Number(formData.Table_id),
+      Table_id: selectedTable.Table_id,
       people_count: Number(formData.people_count),
-      slots_time: RESERVATION_SLOT_TIME,
+      slots_time: formatSlotTime(formData.reservation_time, Number(formData.duration_minutes)),
       Date_time: formData.Date_time,
     });
+    if (created) {
+      setIsReviewing(false);
+      setFormData({
+        Reservations_online: false,
+        Customer_id: 25,
+        slots: 'Dinner',
+        slots_time: RESERVATION_SLOT_TIME,
+        title: 'Mohammed Al-Farsi',
+        customer_mobile: '',
+        Floor: floorId,
+        Capacity_count: 4,
+        people_count: 4,
+        PaymentStatus: 'UnPaid',
+        Table_id: 0,
+        Date_time: '',
+        reservation_time: '19:30',
+        duration_minutes: DEFAULT_RESERVATION_DURATION,
+        Notes: 'Allergies: nuts',
+        Status: true,
+      });
+    }
   };
 
   return (
@@ -253,8 +334,48 @@ const NewReservationModal = ({
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100">
         <div className="p-6">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-            {t('New Reservation')}
+            {isReviewing ? t('Review Reservation') : t('New Reservation')}
           </h2>
+          {isReviewing ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">{t('Confirm these reservation details before saving.')}</p>
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <dt className="text-gray-500">{t('Guest Name')}</dt><dd className="font-medium">{formData.title}</dd>
+                <dt className="text-gray-500">{t('Phone')}</dt><dd className="font-medium">{formData.customer_mobile}</dd>
+                <dt className="text-gray-500">{t('Reservation date')}</dt><dd className="font-medium">{formData.Date_time}</dd>
+                <dt className="text-gray-500">{t('Time')}</dt><dd className="font-medium">{formData.slots_time}</dd>
+                <dt className="text-gray-500">{t('Estimated Duration')}</dt><dd className="font-medium">{formData.duration_minutes} {t('minutes')}</dd>
+                <dt className="text-gray-500">{t('Party Size')}</dt><dd className="font-medium">{formData.people_count}</dd>
+                <dt className="text-gray-500">{t('Floor')}</dt><dd className="font-medium">{floors.find((floor: Floor) => floor.Floor_id === formData.Floor)?.Floor_Name ?? formData.Floor}</dd>
+                <dt className="text-gray-500">{t('Assign Table')}</dt><dd className="font-medium">{selectedFormTable ? getTableLabel(selectedFormTable) : formData.Table_id}</dd>
+                <dt className="text-gray-500">{t('Notes')}</dt><dd className="font-medium">{formData.Notes || '—'}</dd>
+              </dl>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsReviewing(false)}
+                  className="flex-1 border border-purple-300 text-purple-700 bg-white py-2.5 rounded-md font-medium text-sm hover:bg-purple-50"
+                >
+                  {t('Back to edit')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsReviewing(false)}
+                  className="flex-1 border border-gray-300 text-gray-700 bg-white py-2.5 rounded-md font-medium text-sm hover:bg-gray-50"
+                >
+                  {t('Cancel review')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReservation}
+                  disabled={isSubmitting}
+                  className="flex-1 bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white py-2.5 rounded-md font-medium text-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? t('Confirming...') : t('Confirm Reservation')}
+                </button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -313,13 +434,17 @@ const NewReservationModal = ({
                 <label htmlFor="new-reservation-duration" className="block text-[11px] text-gray-600 mb-1">{t('Estimated Duration')}</label>
                 <input
                   id="new-reservation-duration"
-                  type="text"
-                  placeholder={t('__hr __min')}
-                  maxLength={20}
+                  type="number"
+                  name="duration_minutes"
+                  min={30}
+                  max={480}
+                  step={30}
+                  value={formData.duration_minutes}
                   aria-describedby="new-reservation-duration-help"
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
-                <p id="new-reservation-duration-help" className="sr-only">{t('Enter duration in hours and minutes.')}</p>
+                <p id="new-reservation-duration-help" className="sr-only">{t('Duration must be between 30 and 480 minutes.')}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -338,6 +463,19 @@ const NewReservationModal = ({
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
                 <p id="new-reservation-date-time-help" className="sr-only">{t('Select a reservation date within the next 10 days.')}</p>
+              </div>
+              <div>
+                <label htmlFor="new-reservation-time" className="block text-[11px] text-gray-600 mb-1">{t('Reservation time')}</label>
+                <input
+                  id="new-reservation-time"
+                  type="time"
+                  name="reservation_time"
+                  value={formData.reservation_time}
+                  required
+                  step={60}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
               </div>
               <div>
                 <label htmlFor="new-reservation-party-size" className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
@@ -426,6 +564,7 @@ const NewReservationModal = ({
               </button>
             </div>
           </form>
+          )}
         </div>
       </div>
     </div>
@@ -732,15 +871,17 @@ export default function ReservationPage() {
     });
   };
 
-  const handleCreateReservation = async (data: CreateReservationPayload) => {
+  const handleCreateReservation = async (data: CreateReservationPayload): Promise<boolean> => {
     try {
       await createReservation(data).unwrap();
       setIsModalOpen(false);
       toast.success(t('Reservation created successfully!'), { style: toastStyle });
+      return true;
     } catch (error: any) {
       toast.error(error?.data?.error || error?.data?.message || t('Failed to create reservation.'), {
         style: toastStyle,
       });
+      return false;
     }
   };
 
