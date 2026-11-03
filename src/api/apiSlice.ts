@@ -174,15 +174,14 @@ export interface RestaurantDashboardResponse {
   success: boolean;
   message: string;
   data: {
-    TotalOrder: number;
-    TotalSale: number;
-    RepeatCustomersChart: { percentage: number[]; Days: string[] };
-    NewCustomersChart: { percentage: number[]; Days: string[] };
-    ReservationsOrderList: any[];
-    TopSellersItemList: any[];
-    StockAlertList: any[];
-    filter: string;
-    dateRange: { start: string; end: string };
+    TotalOrders: number;
+    TotalSales: number;
+    NewCustomers: number;
+    RepeatCustomers: number;
+    TopSellers: any[];
+    StockAlerts: any[];
+    filter?: string;
+    dateRange?: { start: string; end: string };
   };
 }
 

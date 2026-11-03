@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next'; 
 import { 
   useGetDashboardStatsQuery, 
@@ -7,14 +7,19 @@ import {
 import Loader from '@/components/Loader';
 
 const Sale = () => {
-  const { t } = useTranslation(); 
+  const { t, i18n } = useTranslation();
+  const [period, setPeriod] = useState<'this_week' | 'all_time'>('this_week');
 
   // 1. Fetch Data using RTK Query
   const { data: dashboardRes, isLoading: isLoadingDashboard, isError: isErrorDashboard } = useGetDashboardStatsQuery();
-  const { data: weeklyRes, isLoading: isLoadingWeekly, isError: isErrorWeekly } = useGetRestaurantDashboardQuery({ filter: 'this_week' });
+  const {
+    data: weeklyRes,
+    isLoading: isLoadingWeekly,
+    isError: isErrorWeekly,
+  } = useGetRestaurantDashboardQuery({ filter: 'this_week' });
 
   // 2. Loading State
-  if (isLoadingDashboard || isLoadingWeekly) {
+  if (isLoadingDashboard || (period === 'this_week' && isLoadingWeekly)) {
     return (
       <div className="flex items-center justify-center w-full min-h-[60vh]">
                                <Loader />
@@ -23,7 +28,12 @@ const Sale = () => {
   }
 
   // 3. Error State
-  if (isErrorDashboard || isErrorWeekly || !dashboardRes?.success || !weeklyRes?.success) {
+  if (
+    isErrorDashboard ||
+    (period === 'this_week' && isErrorWeekly) ||
+    !dashboardRes?.success ||
+    (period === 'this_week' && !weeklyRes?.success)
+  ) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
         <p className="text-red-500 font-medium bg-red-50 px-4 py-2 rounded-lg border border-red-200">
@@ -35,18 +45,45 @@ const Sale = () => {
 
   // 4. Extract & Calculate Data
   const stats = dashboardRes.data;
-  const weeklyData = weeklyRes.data;
+  const weeklyData = weeklyRes?.data;
+  const isThisWeek = period === 'this_week';
+  const totalSales = isThisWeek && weeklyData ? weeklyData.TotalSales : stats.TotalSales;
+  const totalOrders = isThisWeek && weeklyData ? weeklyData.TotalOrders : stats.TotalOrders;
+  const totalSalesStr = totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  const allTimeSalesStr = stats.TotalSales.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  const periodLabel = isThisWeek ? t('This Week') : t('All Time');
+  const dateRange = weeklyData?.dateRange;
+  const formatRangeDate = (value: string) => {
+    const datePart = value.slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    const date = match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleDateString(i18n.resolvedLanguage || 'en', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        });
+  };
+  const displayedRange =
+    isThisWeek && dateRange?.start && dateRange?.end
+      ? `${formatRangeDate(dateRange.start)} – ${formatRangeDate(dateRange.end)}`
+      : isThisWeek
+        ? t('Date range unavailable.')
+        : t('All Time');
 
-  // Get Top Sellers from the weekly data (File 1) or Dashboard data (File 2)
-  const topSellers = weeklyData?.TopSellersItemList || stats?.TopSellers || [];
+  // The selected period's dashboard response contains period-specific top sellers.
+  const topSellers = isThisWeek
+    ? weeklyData?.TopSellers || []
+    : stats.TopSellers || [];
   
   // Calculate total items sold by summing up the quantities from top sellers
   const totalItemsSold = topSellers.reduce((acc: number, item: any) => acc + (item.total_quantity_sold || 0), 0);
 
   // Calculate Average Order Value (Total Sales / Total Orders)
-  const avgOrderValue = stats.TotalOrders > 0 ? (stats.TotalSales / stats.TotalOrders).toFixed(2) : '0.00';
-  const totalSalesStr = stats.TotalSales.toLocaleString(undefined, { minimumFractionDigits: 2 });
-  const totalOrders = stats.TotalOrders;
+  const avgOrderValue = totalOrders > 0 ? (totalSales / totalOrders).toFixed(2) : '0.00';
 
  
   const feedback = { lovedIt: 0, good: 0, average: 0, bad: 0, worst: 0 };
@@ -65,12 +102,30 @@ const Sale = () => {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-3xl font-extrabold text-[#6b21a8] mb-1">{totalSalesStr} XOF</h2>
-              <p className="text-gray-500 font-medium">{t('This Week / All Time')}</p>
+              <p className="text-gray-500 font-medium">
+                {periodLabel}
+                {isThisWeek && (
+                  <>
+                    <span aria-hidden="true"> · </span>
+                    {displayedRange}
+                  </>
+                )}
+              </p>
             </div>
-            <button className="bg-white px-4 py-2 rounded-full text-sm font-medium shadow-sm flex items-center gap-2 hover:bg-gray-50 transition-colors">
-              {t('This Week')}
-              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-            </button>
+            <label className="flex items-center gap-2">
+              <span className="sr-only">{t('Report period')}</span>
+              <select
+                aria-label={t('Report period')}
+                value={period}
+                onChange={(event) =>
+                  setPeriod(event.target.value === 'all_time' ? 'all_time' : 'this_week')
+                }
+                className="bg-white px-4 py-2 rounded-full text-sm font-medium shadow-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="this_week">{t('This Week')}</option>
+                <option value="all_time">{t('All Time')}</option>
+              </select>
+            </label>
           </div>
           
           <div className="flex flex-wrap items-center gap-x-12 gap-y-4 text-sm font-medium">
@@ -171,20 +226,20 @@ const Sale = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
             <h4 className="font-semibold mb-2">{t('Total Sales')}</h4>
-            <p className="text-3xl font-bold mb-1">{totalSalesStr} XOF</p>
+            <p className="text-3xl font-bold mb-1">{allTimeSalesStr} XOF</p>
             <p className="text-xs text-green-500">{t('All Time Total')}</p>
           </div>
           
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
             <h4 className="font-semibold mb-2">{t('New Customers')}</h4>
             <p className="text-3xl font-bold mb-1">{stats.NewCustomers}</p>
-            <p className="text-xs text-purple-500">{t('Acquired this period')}</p>
+            <p className="text-xs text-purple-500">{t('All Time Total')}</p>
           </div>
           
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
             <h4 className="font-semibold mb-2">{t('Repeat Customers')}</h4>
             <p className="text-3xl font-bold mb-1">{stats.RepeatCustomers}</p>
-            <p className="text-xs text-orange-500">{t('Returning clients')}</p>
+            <p className="text-xs text-orange-500">{t('All Time Total')}</p>
           </div>
         </div>
 
