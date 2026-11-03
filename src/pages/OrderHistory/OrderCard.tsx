@@ -7,16 +7,23 @@ import {
   // ✅ 1. Import the Lazy PDF Hook
   useLazyGetOrderPdfUrlQuery 
 } from "@/redux/api/quickOrderSlice";
-import { formatOrderMoney, getOrderHistoryBreakdown } from './orderBreakdown';
+import {
+  formatOrderMoney,
+  getOrderCreatedAt,
+  getOrderFulfillmentType,
+  getOrderHistoryBreakdown,
+  getOrderTableContext,
+} from './orderBreakdown';
 
-const getMinutesAgo = (isoString: string | undefined) => {
-  if (!isoString) return '';
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  return Math.max(1, Math.round(diffMs / 60000));
+const getMinutesAgo = (createdAt: Date | null) => {
+  if (!createdAt) return null;
+  const diffMs = Date.now() - createdAt.getTime();
+  if (diffMs < 0) return null;
+  return Math.floor(diffMs / 60000);
 };
 
 const StatusBadge = ({ order }: { order: any }) => {
-  const minutes = getMinutesAgo(order.CreateAt);
+  const minutes = getMinutesAgo(getOrderCreatedAt(order));
   const status = order.order_status || order.Order_Status;
 
   if (status === 'Preparing' || status === 'In_Kitchen' || status === 'Cooking') {
@@ -26,9 +33,11 @@ const StatusBadge = ({ order }: { order: any }) => {
           <span>{status === 'In_Kitchen' ? 'In Kitchen' : status}</span>
           <FiClock className="w-2.5 h-2.5" />
         </div>
-        <span className="text-[#FF9800] text-[8px] font-semibold">
-          Started {minutes} min ago
-        </span>
+        {minutes !== null && (
+          <span className="text-[#FF9800] text-[8px] font-semibold">
+            Started {minutes} min ago
+          </span>
+        )}
       </div>
     );
   }
@@ -46,9 +55,11 @@ const StatusBadge = ({ order }: { order: any }) => {
     return (
       <div className="bg-[#FFEBEE] text-[#F44336] px-2 py-1 rounded-[6px] text-[10px] font-bold flex flex-col items-center min-w-[75px] leading-tight border border-[#FFCDD2]">
         <span>Cancelled</span>
-        <span className="text-[#F44336] text-[8px] font-semibold">
-          Started {minutes} min ago
-        </span>
+        {minutes !== null && (
+          <span className="text-[#F44336] text-[8px] font-semibold">
+            Started {minutes} min ago
+          </span>
+        )}
       </div>
     );
   }
@@ -170,7 +181,8 @@ interface OrderCardProps {
 
 const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
   const breakdown = getOrderHistoryBreakdown(order);
-  const tableType = order.Dining_Option || 'Dine-in';
+  const fulfillmentType = getOrderFulfillmentType(order);
+  const tableContext = getOrderTableContext(order);
   const taxPercentage =
     breakdown.subtotal > 0
       ? ((breakdown.tax / breakdown.subtotal) * 100).toFixed(0)
@@ -286,10 +298,11 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
               </span>
             </div>
             <div className="text-[13px] font-bold text-black mt-0.5">
-              {order.Table
-                ? `Table - ${order.Table.table_name.replace('Table ', '')}`
-                : 'Takeaway'}
+              {tableContext ?? fulfillmentType}
             </div>
+            {tableContext && (
+              <div className="text-[11px] text-gray-500 font-medium">{fulfillmentType}</div>
+            )}
             <div className="text-[11px] text-gray-500 font-medium">
               {breakdown.items.length} items
             </div>
@@ -298,7 +311,7 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
           <div className="flex flex-col items-end gap-1">
             <StatusBadge order={order} />
             <div className="bg-white px-2 py-0.5 rounded-[4px] text-[9px] text-gray-600 font-bold border border-gray-200 shadow-sm flex items-center gap-1 mt-1">
-              {tableType}
+              {fulfillmentType}
             </div>
           </div>
         </div>

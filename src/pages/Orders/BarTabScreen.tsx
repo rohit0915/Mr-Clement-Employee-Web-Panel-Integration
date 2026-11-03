@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next'; // ✅ Added i18n
 import toast from 'react-hot-toast';
 import {
@@ -39,6 +39,11 @@ interface Props {
 const formatMoney = (amount: number, currency = 'XOF') =>
   `${Number(amount || 0).toLocaleString()} ${currency}`;
 
+const getConfiguredCurrency = (currency: unknown): string =>
+  typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency.trim())
+    ? currency.trim().toUpperCase()
+    : 'XOF';
+
 const getResponseMessage = (response: unknown): string | undefined => {
   if (!response || typeof response !== 'object') return undefined;
   const body = response as Record<string, unknown>;
@@ -51,6 +56,10 @@ const getResponseMessage = (response: unknown): string | undefined => {
 
   return typeof message === 'string' && message.trim() ? message : undefined;
 };
+
+const getSubmissionErrorMessage = (error: unknown, fallback: string): string =>
+  getResponseMessage(error) ??
+  (error instanceof Error && error.message ? error.message : fallback);
 
 interface DrinkCatalogItem {
   id: number;
@@ -84,6 +93,7 @@ const getDrinkAvailability = (item: any) => {
 interface DrinkCatalogSelectorProps {
   id: string;
   value: string;
+  currency: string;
   drinks: DrinkCatalogItem[];
   isLoading: boolean;
   isError: boolean;
@@ -95,6 +105,7 @@ interface DrinkCatalogSelectorProps {
 const DrinkCatalogSelector: React.FC<DrinkCatalogSelectorProps> = ({
   id,
   value,
+  currency,
   drinks,
   isLoading,
   isError,
@@ -178,7 +189,7 @@ const DrinkCatalogSelector: React.FC<DrinkCatalogSelectorProps> = ({
       />
       {selectedDrink && (
         <p className="text-[11px] text-gray-600 mt-1" aria-live="polite">
-          {t(selectedDrink.servingSize)} · {formatMoney(selectedDrink.price)} · {t(selectedDrink.availability)}
+          {t(selectedDrink.servingSize)} · {formatMoney(selectedDrink.price, currency)} · {t(selectedDrink.availability)}
         </p>
       )}
       {isOpen && (
@@ -225,7 +236,7 @@ const DrinkCatalogSelector: React.FC<DrinkCatalogSelectorProps> = ({
                 >
                   <span className="flex items-center justify-between gap-3">
                     <span className="font-medium">{drink.name}</span>
-                    <span className="shrink-0">{formatMoney(drink.price)}</span>
+                    <span className="shrink-0">{formatMoney(drink.price, currency)}</span>
                   </span>
                   <span className="block text-xs text-gray-500">
                     {t(drink.servingSize)} · {t(drink.availability)}
@@ -281,9 +292,10 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
     isError: drinksError,
   } = useGetAllItemsQuery({ type: 'Drink', category_id: 'all' });
   const { data: paymentsRes } = useGetMyPaymentOptionsQuery();
+  const currency = getConfiguredCurrency(paymentsRes?.currency);
 
   const [createBarTab, { isLoading: creating }] = useCreateBarTabMutation();
-  const [addBarTabItem] = useAddBarTabItemMutation();
+  const [addBarTabItem, { isLoading: addingItem }] = useAddBarTabItemMutation();
   const [closeBarTab, { isLoading: closing }] = useCloseBarTabWithPaymentMutation();
 
   const tabs: BarTab[] = tabsRes?.data || [];
@@ -324,6 +336,15 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   const [selectedDrink, setSelectedDrink] = useState<DrinkCatalogItem | null>(null);
   const [drinkQty, setDrinkQty] = useState(1);
   const [drinksModifiers, setDrinksModifiers] = useState('');
+  const [createTabError, setCreateTabError] = useState('');
+  const [addItemError, setAddItemError] = useState('');
+  const [createTabFieldErrors, setCreateTabFieldErrors] = useState<{
+    clientName?: string;
+    tableNo?: string;
+    drink?: string;
+  }>({});
+  const createSubmissionLock = useRef(false);
+  const addItemSubmissionLock = useRef(false);
 
   // ---------- Derived ----------
   const filteredTabs = useMemo(() => {
@@ -341,12 +362,20 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
   // ---------- Handlers ----------
   const handleCreateTab = async () => {
-    if (!clientName.trim() || !tableNo.trim()) {
-      alert(t('Client name and table number are required.'));
-      return;
+    if (creating || createSubmissionLock.current) return;
+    const fieldErrors: typeof createTabFieldErrors = {};
+    if (!clientName.trim()) {
+      fieldErrors.clientName = t('Enter a client name.');
+    }
+    if (!tableNo.trim()) {
+      fieldErrors.tableNo = t('Enter a table number.');
     }
     if (drinkName.trim() && !selectedDrink) {
-      alert(t('Select a drink from the catalog or clear the drink name.'));
+      fieldErrors.drink = t('Choose a drink from the catalog.');
+    }
+    setCreateTabFieldErrors(fieldErrors);
+    setCreateTabError('');
+    if (Object.keys(fieldErrors).length > 0) {
       return;
     }
     const items = selectedDrink
@@ -357,28 +386,45 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
         }]
       : [];
 
+    createSubmissionLock.current = true;
     try {
       const response = await createBarTab({
         client_name: clientName.trim(),
         table_no: tableNo.trim(),
         items,
       }).unwrap();
-      toast.success(getResponseMessage(response) || t('Bar tab created successfully.'));
+      if ((response as any)?.success === false) {
+        throw new Error(getResponseMessage(response) || t('Failed to create bar tab. Please retry.'));
+      }
+      const createdTabId = (response as any)?.data?.Bar_Tab_id;
+      toast.success(
+        getResponseMessage(response) ||
+          (createdTabId
+            ? t('Bar tab #{{id}} created successfully.', { id: createdTabId })
+            : t('Bar tab created successfully.')),
+      );
+      setCreateTabError('');
       setShowAddTabModal(false);
       setClientName(''); setTableNo(''); setDrinkName(''); setSelectedDrink(null); setDrinkQty(1); setDrinksModifiers('');
       refetchTabs();
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.data?.message || t('Failed to create bar tab.'));
+    } catch (error: unknown) {
+      console.error('Failed to create bar tab:', error);
+      const message = getSubmissionErrorMessage(error, t('Failed to create bar tab. Please retry.'));
+      setCreateTabError(message);
+      toast.error(message);
+    } finally {
+      createSubmissionLock.current = false;
     }
   };
 
   const handleAddItem = async () => {
-    if (!showAddItemModal) return;
+    if (!showAddItemModal || addingItem || addItemSubmissionLock.current) return;
     if (!selectedDrink) {
-      alert(t('Select a drink from the catalog.'));
+      setAddItemError(t('Choose a drink from the catalog before adding it.'));
       return;
     }
+    setAddItemError('');
+    addItemSubmissionLock.current = true;
     try {
       const response = await addBarTabItem({
         tabId: showAddItemModal.tabId,
@@ -386,13 +432,20 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
         quantity: Math.max(1, drinkQty),
         modifiers: drinksModifiers ? [drinksModifiers] : [],
       }).unwrap();
+      if ((response as any)?.success === false) {
+        throw new Error(getResponseMessage(response) || t('Failed to add item. Please retry.'));
+      }
       toast.success(getResponseMessage(response) || t('Drink added successfully.'));
       setShowAddItemModal(null);
       setDrinkName(''); setSelectedDrink(null); setDrinkQty(1); setDrinksModifiers('');
       refetchTabs();
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.data?.message || t('Failed to add item.'));
+    } catch (error: unknown) {
+      console.error('Failed to add bar tab item:', error);
+      const message = getSubmissionErrorMessage(error, t('Failed to add item. Please retry.'));
+      setAddItemError(message);
+      toast.error(message);
+    } finally {
+      addItemSubmissionLock.current = false;
     }
   };
 
@@ -478,6 +531,9 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
               setSelectedDrink(null);
               setDrinkQty(1);
               setDrinksModifiers('');
+              setCreateTabError('');
+              setAddItemError('');
+              setCreateTabFieldErrors({});
               setShowAddTabModal(true);
             }}
             className="bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white px-4 py-2 rounded-lg font-bold text-xs shadow-sm hover:opacity-90 transition-all flex items-center gap-1 whitespace-nowrap"
@@ -499,7 +555,6 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8 max-h-[60vh] overflow-y-auto pr-2 hover-scrollbar">
           {filteredTabs.map((tab) => {
-            const currency = tab.currency || tab.payment?.currency || 'XOF';
             return (
               <div
                 key={tab._id}
@@ -554,6 +609,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                         setSelectedDrink(null);
                         setDrinkQty(1);
                         setDrinksModifiers('');
+                        setAddItemError('');
                         setShowAddItemModal({ tabId: tab.Bar_Tab_id, tabName: tab.client_name });
                       }}
                       className="flex-1 bg-[linear-gradient(180deg,#6A1B9A_0%,#D32F2F_100%)] text-white py-1.5 rounded-md text-xs font-bold shadow-sm hover:opacity-90 transition-all"
@@ -612,7 +668,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
               <h2 className="text-xl font-bold mb-1">{t('Add New Tab')}</h2>
               <p className="text-xs text-white/80">{t('Open a new bar tab and optionally add the first drink.')}</p>
               <button
-                onClick={() => setShowAddTabModal(false)}
+                onClick={() => {
+                  if (creating) return;
+                  setShowAddTabModal(false);
+                }}
+                disabled={creating}
                 className="absolute top-4 right-4 text-white/80 hover:text-white"
               >
                 ✕
@@ -621,22 +681,46 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t('Client Name *')}</label>
+                  <label htmlFor="new-tab-client-name" className="block text-xs font-bold text-gray-600 mb-1">{t('Client Name *')}</label>
                   <input
+                    id="new-tab-client-name"
                     value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
+                    onChange={(e) => {
+                      setClientName(e.target.value);
+                      setCreateTabFieldErrors((previous) => ({ ...previous, clientName: undefined }));
+                      setCreateTabError('');
+                    }}
+                    aria-invalid={!!createTabFieldErrors.clientName}
+                    aria-describedby={createTabFieldErrors.clientName ? 'new-tab-client-error' : undefined}
                     placeholder={t('e.g., Ahmad Aminoff')}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8E24AA]"
                   />
+                  {createTabFieldErrors.clientName && (
+                    <p id="new-tab-client-error" className="mt-1 text-xs text-red-600" role="alert">
+                      {createTabFieldErrors.clientName}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t('Table No *')}</label>
+                  <label htmlFor="new-tab-table-no" className="block text-xs font-bold text-gray-600 mb-1">{t('Table No *')}</label>
                   <input
+                    id="new-tab-table-no"
                     value={tableNo}
-                    onChange={(e) => setTableNo(e.target.value)}
+                    onChange={(e) => {
+                      setTableNo(e.target.value);
+                      setCreateTabFieldErrors((previous) => ({ ...previous, tableNo: undefined }));
+                      setCreateTabError('');
+                    }}
+                    aria-invalid={!!createTabFieldErrors.tableNo}
+                    aria-describedby={createTabFieldErrors.tableNo ? 'new-tab-table-error' : undefined}
                     placeholder={t('e.g., #7')}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8E24AA]"
                   />
+                  {createTabFieldErrors.tableNo && (
+                    <p id="new-tab-table-error" className="mt-1 text-xs text-red-600" role="alert">
+                      {createTabFieldErrors.tableNo}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -646,6 +730,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                   <DrinkCatalogSelector
                     id="new-tab-drink"
                     value={drinkName}
+                    currency={currency}
                     drinks={drinkItems}
                     isLoading={drinksLoading}
                     isError={drinksError}
@@ -653,12 +738,21 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                     onChange={(value) => {
                       setDrinkName(value);
                       setSelectedDrink(null);
+                      setCreateTabFieldErrors((previous) => ({ ...previous, drink: undefined }));
+                      setCreateTabError('');
                     }}
                     onSelect={(drink) => {
                       setSelectedDrink(drink);
                       setDrinkName(drink.name);
+                      setCreateTabFieldErrors((previous) => ({ ...previous, drink: undefined }));
+                      setCreateTabError('');
                     }}
                   />
+                  {createTabFieldErrors.drink && (
+                    <p className="mt-1 text-xs text-red-600" role="alert">
+                      {createTabFieldErrors.drink}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-600 mb-1">{t('Modifier')}</label>
@@ -674,6 +768,12 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                   </select>
                 </div>
               </div>
+
+              {createTabError && (
+                <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                  {createTabError}
+                </p>
+              )}
 
               <div className="mb-4">
                 <label className="block text-xs font-bold text-gray-600 mb-1">{t('Quantity')}</label>
@@ -692,7 +792,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
             </div>
             <div className="border-t border-gray-200 p-4 flex gap-3">
               <button
-                onClick={() => setShowAddTabModal(false)}
+                onClick={() => {
+                  if (creating) return;
+                  setShowAddTabModal(false);
+                }}
+                disabled={creating}
                 className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-bold hover:bg-gray-50"
               >
                 {t('Cancel')}
@@ -719,7 +823,12 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                 {t('Tab')}: {showAddItemModal.tabName} (#{showAddItemModal.tabId})
               </p>
               <button
-                onClick={() => setShowAddItemModal(null)}
+                onClick={() => {
+                  if (addingItem) return;
+                  setAddItemError('');
+                  setShowAddItemModal(null);
+                }}
+                disabled={addingItem}
                 className="absolute top-4 right-4 text-white/80 hover:text-white"
               >
                 ✕
@@ -732,6 +841,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                   <DrinkCatalogSelector
                     id="add-tab-item-drink"
                     value={drinkName}
+                    currency={currency}
                     drinks={drinkItems}
                     isLoading={drinksLoading}
                     isError={drinksError}
@@ -739,10 +849,12 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                     onChange={(value) => {
                       setDrinkName(value);
                       setSelectedDrink(null);
+                      setAddItemError('');
                     }}
                     onSelect={(drink) => {
                       setSelectedDrink(drink);
                       setDrinkName(drink.name);
+                      setAddItemError('');
                     }}
                   />
                 </div>
@@ -760,6 +872,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                   </select>
                 </div>
               </div>
+              {addItemError && (
+                <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                  {addItemError}
+                </p>
+              )}
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">{t('Quantity')}</label>
                 <div className="flex items-center gap-2">
@@ -771,16 +888,22 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
             </div>
             <div className="border-t border-gray-200 p-4 flex gap-3">
               <button
-                onClick={() => setShowAddItemModal(null)}
+                onClick={() => {
+                  if (addingItem) return;
+                  setAddItemError('');
+                  setShowAddItemModal(null);
+                }}
+                disabled={addingItem}
                 className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-bold hover:bg-gray-50"
               >
                 {t('Cancel')}
               </button>
               <button
                 onClick={handleAddItem}
-                className="flex-1 bg-[#8E24AA] text-white py-2 rounded-lg text-sm font-bold hover:bg-[#7B1FA2]"
+                disabled={addingItem || drinksLoading || drinksError}
+                className="flex-1 bg-[#8E24AA] text-white py-2 rounded-lg text-sm font-bold hover:bg-[#7B1FA2] disabled:opacity-50"
               >
-                {t('Add')}
+                {addingItem ? t('Adding…') : t('Add')}
               </button>
             </div>
           </div>
@@ -807,13 +930,13 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
               <div className="flex justify-between mb-2 text-sm">
                 <span className="text-gray-500">{t('Subtotal')}</span>
                 <span className="font-semibold">
-                  {formatMoney(paymentTarget.subtotal, paymentTarget.currency)}
+                  {formatMoney(paymentTarget.subtotal, currency)}
                 </span>
               </div>
               <div className="flex justify-between mb-4 text-sm">
                 <span className="text-gray-500">{t('Total due')}</span>
                 <span className="font-bold text-gray-900">
-                  {formatMoney(happyHourTotal(paymentTarget), paymentTarget.currency)}
+                  {formatMoney(happyHourTotal(paymentTarget), currency)}
                 </span>
               </div>
 

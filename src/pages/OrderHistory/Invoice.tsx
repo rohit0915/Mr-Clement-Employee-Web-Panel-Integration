@@ -2,7 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useOrderStore } from "@/store/zustandStores";
 import printIcon from "@/assets/order/Print.svg";
 import type { Order } from "@/types/order";
-import { formatOrderMoney, getOrderHistoryBreakdown } from "./orderBreakdown";
+import {
+  formatOrderMoney,
+  getOrderFulfillmentType,
+  getOrderHistoryBreakdown,
+  getOrderTableContext,
+} from "./orderBreakdown";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://pos-backend-7xuw.onrender.com/';
 
@@ -12,7 +17,7 @@ function mapQrOrder(raw: any): Order {
     // Use POS_Order_id if available, otherwise fallback to qr_order_id or id
     orderId: raw.POS_Order_id ?? raw.qr_order_id ?? raw.id, 
     created_at: raw.CreateAt ?? raw.UpdatedAt,
-    orderType: raw.Dining_Option ?? "Dine in",
+    orderType: getOrderFulfillmentType(raw),
     pricingSummary: {
       totalAmount: raw.Total ?? raw.SubTotal ?? 0,
       currency: raw.currency ?? "XOF",
@@ -95,7 +100,10 @@ const PrintBillModal = ({ open, onClose, order }: { open: boolean; onClose: () =
                 <div>
                   <p className="font-bold text-gray-900 text-lg mb-1">Order #{orderDetails.POS_Order_id}</p>
                   <p>Date: {new Date(orderDetails.CreateAt).toLocaleString()}</p>
-                  <p>Type: {orderDetails.Dining_Option}</p>
+                  <p>Type: {getOrderFulfillmentType(orderDetails)}</p>
+                  {getOrderTableContext(orderDetails) && (
+                    <p>Table: {getOrderTableContext(orderDetails)}</p>
+                  )}
                   <p>Status: {orderDetails.order_status_label}</p>
                 </div>
                 <div className="text-right">
@@ -315,7 +323,12 @@ const Invoice = ({ onBack }: { onBack?: () => void }) => {
                     ? new Date(order.created_at || order.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
                     : ""}
                 </td>
-                <td className="py-4 px-6 text-[13px] font-medium text-gray-600">{order.orderType || "Dine in"}</td>
+                <td className="py-4 px-6 text-[13px] font-medium text-gray-600">
+                  {getOrderFulfillmentType({
+                    Dining_Option: order.Dining_Option,
+                    orderType: order.orderType,
+                  })}
+                </td>
                 <td className="py-4 px-6 text-[13px] font-bold text-gray-900">
                   {order.pricingSummary?.totalAmount?.toLocaleString() || ""} XOF
                 </td>

@@ -396,7 +396,7 @@ const LoginPage: React.FC = () => {
 
           <div className="text-center mb-2">
             <h3 className="text-2xl lg:text-[32px] font-bold">
-              {step === 'otp' ? t('Verify OTP') : t('Welcome Back!')}
+              {step === 'otp' ? t('Verify OTP') : t('Welcome back!')}
             </h3>
             <p className="text-sm text-[#000000CC] mt-1 font-normal">
               {step === 'otp'
@@ -404,7 +404,7 @@ const LoginPage: React.FC = () => {
                     length: OTP_LENGTH,
                     email: maskedEmail,
                   })
-                : t('Login to access your Triaxx Account')}
+                : t('Sign in to your Triaxx account.')}
             </p>
           </div>
 
@@ -435,14 +435,14 @@ const LoginPage: React.FC = () => {
                   htmlFor="employeeId"
                   className="block text-sm font-medium mb-1"
                 >
-                  {t('Employee id')}
+                  {t('Employee ID')}
                 </label>
                 <input
                   id="employeeId"
                   type="text"
                   value={employeeId}
                   onChange={(e) => setEmployeeId(e.target.value)}
-                  placeholder={t('Enter Employee id here...')}
+                  placeholder={t('Enter your employee ID')}
                   className="w-full px-4 py-3 bg-[linear-gradient(180deg,rgba(106,27,154,0.1)_0%,rgba(211,47,47,0.1)_100%)] border-transparent rounded-lg focus:ring-1 focus:ring-purple-600 focus:border-purple-600 focus:bg-white text-sm placeholder-gray-400"
                   required
                 />
@@ -460,7 +460,7 @@ const LoginPage: React.FC = () => {
                     to="/forgot-password"
                     className="text-xs text-[#00000099] hover:cursor-pointer"
                   >
-                    {t('Forget Password?')}
+                    {t('Forgot password?')}
                   </Link>
                 </div>
                 <div className="relative">
@@ -469,7 +469,7 @@ const LoginPage: React.FC = () => {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={t('Enter Your Password here...')}
+                    placeholder={t('Enter your password')}
                     className="w-full px-4 py-3 bg-[linear-gradient(180deg,rgba(106,27,154,0.1)_0%,rgba(211,47,47,0.1)_100%)] border-transparent rounded-lg focus:ring-1 focus:ring-purple-600 focus:border-purple-600 focus:bg-white text-sm placeholder-gray-400"
                     required
                   />
@@ -582,7 +582,7 @@ const LoginPage: React.FC = () => {
 
           {activeTab !== 'Employee' && step === 'credentials' && (
             <div className="text-center py-12 text-gray-500">
-              {t('{{tab}} login form will be here.', { tab: t(activeTab) })}
+              {t('{{tab}} sign-in is not available yet.', { tab: t(activeTab) })}
             </div>
           )}
 
@@ -601,7 +601,7 @@ const LoginPage: React.FC = () => {
               <div className="mt-6 flex items-center">
                 <hr className="w-full border-gray-300" />
                 <span className="px-2 text-xs text-gray-500 whitespace-nowrap">
-                  {t('Or login with')}
+                  {t('Or sign in with')}
                 </span>
                 <hr className="w-full border-gray-300" />
               </div>

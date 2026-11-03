@@ -533,15 +533,17 @@
 
 
   "Personal info": "Personal info",
-  "You can check you all personal Information here.": "You can check you all personal Information here.",
+  "View your personal details and contact information.": "View your personal details and contact information.",
   
-  "Choose the notification preferences accordingly.": "Choose the notification preferences accordingly.",
+  "Manage your notification preferences.": "Manage your notification preferences.",
   "Login & Security": "Login & Security",
-  "Change the password and email address.": "Change the password and email address.",
+  "Update your recovery email and password.": "Update your recovery email and password.",
   "Work Summary": "Work Summary",
-  "The work done and the money earned can be monitored here.": "The work done and the money earned can be monitored here.",
+  "Review your attendance, hours, and work performance.": "Review your attendance, hours, and work performance.",
   "Support Tickets": "Support Tickets",
   "Clock in / out": "Clock in / out",
+  "Create and track your support requests.": "Create and track your support requests.",
+  "Record the start and end of your shift.": "Record the start and end of your shift.",
   
   "Failed to load user profile. Please try again.": "Failed to load user profile. Please try again.",
   
@@ -568,7 +570,9 @@
 
   "Responsibility": "Responsibility",
  
-  "Employee id": "Employee id",
+  "Employee ID": "Employee ID",
+  "Enter your employee ID": "Enter your employee ID",
+  "Enter your password": "Enter your password",
  
   "Work Details": "Work Details",
   "Onboarding Date": "Onboarding Date",
@@ -583,7 +587,7 @@
   "Enter Current Password": "Enter Current Password",
   "Show": "Show",
   "Password reset requires admin approval. Please contact your administrator.": "Password reset requires admin approval. Please contact your administrator.",
-  "Forget Password": "Forget Password",
+  "Forgot password": "Forgot password",
   "Enter New Password": "Enter New Password",
   "Re-enter New Password": "Re-enter New Password",
  
@@ -666,16 +670,17 @@
 
   "Failed to update clock status. Please try again.": "Failed to update clock status. Please try again.",
     "Sign in": "Sign in",
-  "Welcome Back!": "Welcome Back!",
-  "Login to access your Triaxx Account": "Login to access your Triaxx Account",
+  "Welcome back!": "Welcome back!",
+    "Sign in to your Triaxx account.": "Sign in to your Triaxx account.",
+    "{{tab}} sign-in is not available yet.": "{{tab}} sign-in is not available yet.",
  
   "Password": "Password",
-  "Forget Password?": "Forget Password?",
+  "Forgot password?": "Forgot password?",
   "Remember me": "Remember me",
   
   "Don't have an account?": "Don't have an account?",
   "Sign up": "Sign up",
-  "Or login with": "Or login with",
+  "Or sign in with": "Or sign in with",
   
   
   

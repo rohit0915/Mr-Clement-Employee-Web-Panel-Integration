@@ -47,7 +47,7 @@ const Settings: React.FC = () => {
     {
       icon: accountIcon,
       title: t('Personal info'),
-      desc: t('You can check you all personal Information here.'),
+      desc: t('View your personal details and contact information.'),
       selector: '.settings-personal-info',
       highlightKey: 'profile',
       onClick: () => {
@@ -58,7 +58,7 @@ const Settings: React.FC = () => {
     {
       icon: notificationIcon,
       title: t('Notifications'),
-      desc: t('Choose the notification preferences accordingly.'),
+      desc: t('Manage your notification preferences.'),
       selector: '.settings-notifications',
       highlightKey: 'notifications',
       onClick: () => {
@@ -69,7 +69,7 @@ const Settings: React.FC = () => {
     {
       icon: changePasswordIcon,
       title: t('Login & Security'),
-      desc: t('Change the password and email address.'),
+      desc: t('Update your recovery email and password.'),
       selector: '.settings-login-security',
       highlightKey: 'security',
       onClick: () => {
@@ -80,7 +80,7 @@ const Settings: React.FC = () => {
     {
       icon: workSummaryIcon,
       title: t('Work Summary'),
-      desc: t('The work done and the money earned can be monitored here.'),
+      desc: t('Review your attendance, hours, and work performance.'),
       selector: '.settings-work-summary',
       highlightKey: 'work',
       onClick: () => {
@@ -91,7 +91,7 @@ const Settings: React.FC = () => {
     {
       icon: headphoneIcon,
       title: t('Support Tickets'),
-      desc: t('The work done and the money earned can be monitored here.'),
+      desc: t('Create and track your support requests.'),
       selector: '.settings-contact-support',
       highlightKey: 'contact-support',
       onClick: () => {
@@ -157,7 +157,7 @@ const Settings: React.FC = () => {
             </div>
           </div>
           <div className="font-bold text-lg">{t('Clock in / out')}</div>
-          <div className="text-[#00000099] text-sm">{t('Change the password and email address.')}</div>
+          <div className="text-[#00000099] text-sm">{t('Record the start and end of your shift.')}</div>
         </div>
       </div>
     </div>

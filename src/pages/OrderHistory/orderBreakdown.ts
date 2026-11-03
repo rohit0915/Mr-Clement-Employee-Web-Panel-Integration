@@ -1,4 +1,16 @@
 type OrderRecord = {
+  CreateAt?: unknown;
+  created_at?: unknown;
+  createdAt?: unknown;
+  Dining_Option?: unknown;
+  orderType?: unknown;
+  order_type?: unknown;
+  fulfillment_type?: unknown;
+  Table_id?: unknown;
+  Table?: {
+    table_name?: unknown;
+    name?: unknown;
+  } | null;
   SubTotal?: unknown;
   subtotal?: unknown;
   Tax?: unknown;
@@ -18,6 +30,15 @@ type OrderRecord = {
   items?: OrderLineRecord[];
 };
 
+export const getOrderCreatedAt = (
+  order: Pick<OrderRecord, 'CreateAt' | 'created_at' | 'createdAt'>,
+): Date | null => {
+  const timestamp = order.CreateAt ?? order.created_at ?? order.createdAt;
+  if (typeof timestamp !== 'string' && !(timestamp instanceof Date)) return null;
+  const createdAt = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  return Number.isFinite(createdAt.getTime()) ? createdAt : null;
+};
+
 type OrderLineRecord = {
   _id?: unknown;
   item_id?: unknown;
@@ -32,6 +53,11 @@ type OrderLineRecord = {
   name?: unknown;
   item_note?: unknown;
   notes?: unknown;
+  item_size?: unknown;
+  size?: unknown;
+  item_Variants_id?: unknown;
+  variant_name?: unknown;
+  variant_price?: unknown;
   Item?: { item_id?: unknown; item_name?: unknown; prices?: unknown } | null;
   Addon?: OrderModifierRecord | null;
   Variant?: OrderModifierRecord | null;
@@ -114,14 +140,26 @@ const mapLine = (item: OrderLineRecord, index: number): OrderHistoryLine => {
   ].map((addon, addonIndex) =>
     mapModifier(addon, `${itemId ?? index}-addon-${addonIndex}`, 'Add-on'),
   ).filter((addon): addon is OrderHistoryModifier => addon !== undefined);
-  const variant = mapModifier(item.Variant, itemId, 'Variant');
+  const variant = mapModifier(
+    item.Variant ?? (
+      typeof (item.item_size ?? item.size ?? item.variant_name) === 'string'
+        ? {
+            id: item.item_Variants_id,
+            name: item.variant_name ?? item.item_size ?? item.size,
+            price: item.variant_price,
+          }
+        : undefined
+    ),
+    item.item_Variants_id ?? itemId,
+    'Variant',
+  );
   const quantity = Math.max(1, readAmount(item.item_Quentry, item.quantity) ?? 1);
   const price = readAmount(
     item.unit_price,
     item.item_price,
+    item.price,
     item.prices,
     item.Item?.prices,
-    item.price,
   ) ?? 0;
   const modifierTotal =
     addOns.reduce((sum, addon) => sum + addon.price, 0) + (variant?.price ?? 0);
@@ -187,3 +225,41 @@ export const formatOrderMoney = (amount: number): string =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} XOF`;
+
+export const getOrderFulfillmentType = (order: {
+  Dining_Option?: unknown;
+  orderType?: unknown;
+  order_type?: unknown;
+  fulfillment_type?: unknown;
+}): string => {
+  const value =
+    order.Dining_Option ??
+    order.fulfillment_type ??
+    order.order_type ??
+    order.orderType;
+  if (typeof value !== 'string' || !value.trim()) return 'Fulfillment not specified';
+
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (normalized === 'dine in') return 'Dine in';
+  if (normalized === 'takeaway' || normalized === 'take away') return 'Takeaway';
+  if (normalized === 'delivery') return 'Delivery';
+  return value.trim();
+};
+
+export const getOrderTableContext = (order: {
+  Dining_Option?: unknown;
+  orderType?: unknown;
+  order_type?: unknown;
+  fulfillment_type?: unknown;
+  Table_id?: unknown;
+  Table?: { table_name?: unknown; name?: unknown } | null;
+}): string | undefined => {
+  if (getOrderFulfillmentType(order) !== 'Dine in') return undefined;
+  const tableName = order.Table?.table_name ?? order.Table?.name;
+  if (typeof tableName === 'string' && tableName.trim()) return tableName.trim();
+  const tableId = order.Table_id;
+  if (typeof tableId === 'number' || (typeof tableId === 'string' && tableId.trim())) {
+    return `Table ${tableId}`;
+  }
+  return undefined;
+};

@@ -48,8 +48,6 @@ const menuItems: OrderItem[] = [
     itemType: 'Burger',
     image: burgerImages[i % burgerImages.length],
     addOns: [],
-    description: "lorem20 fdshf d f d f dfkdh d thi sis  a system hene r fea lala jmm i am fong foind o sathi re tere bina bhi kya jeeena tere beeina bhi ky ajeena fulo me kaliyo me. this is the delicious product  lorem 40.",
-
     notes: '',
     size: 'Regular',
     preparationStation: 'Kitchen' as PreparationStation,
@@ -63,8 +61,6 @@ const menuItems: OrderItem[] = [
     itemType: 'Beverage',
     image: beverageImages[i % beverageImages.length],
     addOns: [],
-    description: "lorem20 fdshf d f d f dfkdh d thi sis  a system hene r fea lala jmm i am fong foind o sathi re tere bina bhi kya jeeena tere beeina bhi ky ajeena fulo me kaliyo me. this is the delicious product  lorem 40.",
-
     notes: '',
     size: 'Medium',
     preparationStation: 'Counter' as PreparationStation,
@@ -78,8 +74,6 @@ const menuItems: OrderItem[] = [
     itemType: 'Crispy',
     image: crispyImages[i % crispyImages.length],
     addOns: [],
-    description: "lorem20 fdshf d f d f dfkdh d thi sis  a system hene r fea lala jmm i am fong foind o sathi re tere bina bhi kya jeeena tere beeina bhi ky ajeena fulo me kaliyo me. this is the delicious product  lorem 40.",
-
     notes: '',
     size: 'Regular',
     preparationStation: 'Kitchen' as PreparationStation,
@@ -93,8 +87,6 @@ const menuItems: OrderItem[] = [
     itemType: 'Nugget',
     image: nuggetImages[i % nuggetImages.length],
     addOns: [],
-    description: "lorem20 fdshf d f d f dfkdh d thi sis  a system hene r fea lala jmm i am fong foind o sathi re tere bina bhi kya jeeena tere beeina bhi ky ajeena fulo me kaliyo me. this is the delicious product  lorem 40.",
-
     notes: '',
     size: 'Small',
     preparationStation: 'Kitchen' as PreparationStation,

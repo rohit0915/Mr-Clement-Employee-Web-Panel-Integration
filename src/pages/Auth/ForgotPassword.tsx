@@ -93,7 +93,7 @@ const ForgotPasswordPage: React.FC = () => {
           </div>
 
           <div className="text-center mb-8">
-            <h3 className="text-2xl lg:text-[32px] font-bold">Forget Password</h3>
+            <h3 className="text-2xl lg:text-[32px] font-bold">Forgot password?</h3>
             <p className="text-sm text-[#000000CC] mt-2 font-normal">
               {emailSubmitted
                 ? 'An authentication code has been sent to your email'

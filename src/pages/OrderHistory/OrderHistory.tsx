@@ -1,15 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGetAllOrderHistoryQuery, useGetOrderHistoryByDateRangeQuery, useGetOrderHistoryByStatusQuery } from '@/redux/api/orderHistoryApi';
 import PaymentModal from '@/components/common/PaymentModal';
 import { SuccessModal } from '@/components/common/SuccessModal';
 import Invoice from './Invoice';
-import type { OrderItem } from '@/types/order';
+import type { OrderItem, ServerPosOrder } from '@/types/order';
 import { useWalkthroughStore } from '@/store/walkthroughStore';
 import { useNavigate } from 'react-router-dom';
 import { teamChatTrainingSteps } from '@/walkthrough/steps';
 import * as orderApi from '@/api/orderApi';
 import Loader from '@/components/Loader';
-import { getOrderHistoryBreakdown } from './orderBreakdown';
+import {
+  getOrderCreatedAt,
+  getOrderFulfillmentType,
+  getOrderHistoryBreakdown,
+  getOrderTableContext,
+} from './orderBreakdown';
+import { useLazyGetOrderByIdQuery } from '@/redux/api/quickOrderSlice';
 
 // Import the separated components
 import OrderCard from './OrderCard';
@@ -21,7 +27,12 @@ import OrderSummaryModal from './OrderSummaryModal';
 
 const getDateRange = (filter: string) => {
   const today = new Date();
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   if (filter === 'Today') {
     const td = formatDate(today);
@@ -43,6 +54,10 @@ const getDateRange = (filter: string) => {
 // ============================================================
 
 const OrderHistory = () => {
+  type OrderHistoryRecord = ServerPosOrder & {
+    order_status?: string;
+    Table?: { table_name?: string } | null;
+  };
   // 'orders' corresponds to the PURPLE toggle, 'dining' corresponds to the ORANGE toggle
   const [activeTab, setActiveTab] = useState<'orders' | 'dining'>('orders');
 
@@ -50,6 +65,10 @@ const OrderHistory = () => {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
+  const [orderDetailError, setOrderDetailError] = useState('');
+  const orderDetailRequestId = useRef(0);
+  const [fetchOrderDetails] = useLazyGetOrderByIdQuery();
 
   // Filter and tab logic
   const [showDateDropdown, setShowDateDropdown] = useState(false);
@@ -160,17 +179,32 @@ const OrderHistory = () => {
   let orders = Array.isArray(data?.data) ? data.data : (data?.data?.orders || []);
   let timePeriod = dateFilter ? dateFilter.toLowerCase() : 'all time';
 
+  if (dateRange) {
+    orders = orders.filter((order: OrderHistoryRecord) => {
+      const createdAt = getOrderCreatedAt(order);
+      if (!createdAt) return false;
+      const localDate = [
+        createdAt.getFullYear(),
+        String(createdAt.getMonth() + 1).padStart(2, '0'),
+        String(createdAt.getDate()).padStart(2, '0'),
+      ].join('-');
+      return localDate >= dateRange.start_date && localDate <= dateRange.end_date;
+    });
+  }
+
   // Client-side fallback filtering
   if (statusFilter) {
     orders = orders.filter((o: any) => o.order_status === statusFilter || o.Order_Status === statusFilter);
   }
 
-  const handleCardClick = (order: any) => {
+  const toSelectedOrder = (order: OrderHistoryRecord) => {
     const breakdown = getOrderHistoryBreakdown(order);
-    setSelectedOrder({
-      orderId: order.POS_Order_id,
+    return {
+      ...order,
+      orderId: String(order.POS_Order_id),
       status: order.order_status || order.Order_Status,
-      tableInfo: { tableId: order.Table?.table_name || 'Takeaway' },
+      fulfillmentType: getOrderFulfillmentType(order),
+      tableContext: getOrderTableContext(order),
       items: breakdown.items,
       breakdown,
       pricingSummary: {
@@ -181,8 +215,37 @@ const OrderHistory = () => {
       },
       customerInfo: { name: order.Customer?.Name || '' },
       paymentDetails: { method: 'Cash' },
-    });
+    };
+  };
+
+  const handleCardClick = async (order: OrderHistoryRecord) => {
+    const requestId = ++orderDetailRequestId.current;
+    const orderId = order.POS_Order_id;
+    setSelectedOrder(toSelectedOrder(order));
+    setOrderDetailLoading(true);
+    setOrderDetailError('');
     setShowSummaryModal(true);
+    try {
+      const response = await fetchOrderDetails(orderId).unwrap();
+      if (!response.data) {
+        throw new Error('Order details were missing from the server response.');
+      }
+      if (requestId === orderDetailRequestId.current) {
+        setSelectedOrder(toSelectedOrder(response.data));
+      }
+    } catch (error: any) {
+      if (requestId === orderDetailRequestId.current) {
+        setOrderDetailError(
+          error?.data?.message ||
+            error?.message ||
+            'Could not load persisted order details. Showing the history-list data.',
+        );
+      }
+    } finally {
+      if (requestId === orderDetailRequestId.current) {
+        setOrderDetailLoading(false);
+      }
+    }
   };
 
   return (
@@ -344,7 +407,13 @@ const OrderHistory = () => {
       {selectedOrder && (
         <OrderSummaryModal
           open={showSummaryModal}
-          onClose={() => setShowSummaryModal(false)}
+          onClose={() => {
+            orderDetailRequestId.current += 1;
+            setShowSummaryModal(false);
+            setOrderDetailLoading(false);
+          }}
+          isLoading={orderDetailLoading}
+          loadError={orderDetailError}
           order={{
             items: selectedOrder.items,
             subtotal: selectedOrder.pricingSummary?.subtotal || 0,
@@ -352,6 +421,8 @@ const OrderHistory = () => {
             total: selectedOrder.pricingSummary?.totalAmount || 0,
             breakdown: selectedOrder.breakdown,
             orderId: selectedOrder.orderId,
+            fulfillmentType: selectedOrder.fulfillmentType,
+            tableContext: selectedOrder.tableContext,
             paymentType: selectedOrder.paymentDetails?.method || 'Cash',
             customerName: selectedOrder.customerInfo?.name || '',
           }}

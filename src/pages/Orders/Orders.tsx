@@ -80,7 +80,9 @@ const PaymentReceivedModal = ({
         <h2 className="text-[22px] font-bold text-[#00C853] mb-3">{t("Payment Received Successful !")}</h2>
 
         <p className="text-[13px] text-gray-600 text-center leading-relaxed mb-6 px-4">
-          {t("Your Dish has been created and will be updated in the menu in couple of minutes")}
+          {t("Payment was recorded successfully for order {{reference}}.", {
+            reference: orderId ? `#${orderId}` : t("this order"),
+          })}
         </p>
 
         <div className="flex flex-col items-center gap-2 mb-8">
@@ -586,10 +588,14 @@ const Orders: React.FC = () => {
 
     const customizedItem = {
       ...modalItem,
-      price: modalItem.price + totalAddonPrice, 
+      price: modalItem.price + totalAddonPrice,
       size,
       ...(variantId != null ? { variantId } : {}),
-      addOns: addons.map((a, i) => ({ id: String(i), name: a, price: addonPrice })),
+      addOns: addons.map((name, index) => ({
+        id: String(index),
+        name,
+        price: addonPrice,
+      })),
       notes: note,
     };
     
@@ -1064,17 +1070,29 @@ const Orders: React.FC = () => {
                     </div>
 
                     {/* Items in category */}
-                    {catItems.map((item: OrderItem, idx: number) => (
-                      <div key={idx} className="flex flex-col mb-4">
+                    {catItems.map((item: OrderItem, idx: number) => {
+                      const addonUnitTotal = (item.addOns ?? []).reduce(
+                        (sum, addon) => sum + (Number(addon.price) || 0),
+                        0,
+                      );
+                      const baseUnitPrice = Math.max(0, item.price - addonUnitTotal);
+                      return (
+                      <div key={item.lineId ?? `${item.itemId}-${idx}`} className="flex flex-col mb-4">
                         <div className="flex justify-between items-start">
                           <div className="w-8 text-[13px] font-semibold text-gray-800">{item.quantity} x</div>
                           <div className="flex-1 pl-2 pr-2">
                             <div className="text-[13px] font-bold text-gray-900 leading-tight">{item.name}</div>
-                            
-                            {/* Addons (e.g., Add extra cheese) */}
-                            {item.addOns && item.addOns.length > 0 && (
-                              <div className="text-[10px] text-gray-500 mt-0.5">
-                                {item.addOns.map((a: any) => `Add ${a.name}`).join(', ')}
+                            <div className="text-[10px] text-gray-500 mt-0.5">
+                              {t("Item")}: {baseUnitPrice.toLocaleString()} XOF {t("each")}
+                            </div>
+                            {item.addOns?.map((addon) => (
+                              <div key={addon.id} className="text-[10px] text-gray-500">
+                                + {addon.name}: {Number(addon.price || 0).toLocaleString()} XOF {t("each")}
+                              </div>
+                            ))}
+                            {item.variantId != null && item.size && (
+                              <div className="text-[10px] text-gray-500">
+                                {t("Size")}: {item.size}
                               </div>
                             )}
                             
@@ -1123,7 +1141,8 @@ const Orders: React.FC = () => {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -1131,12 +1150,16 @@ const Orders: React.FC = () => {
               {/* Footer Summary */}
               <div className="bg-[#FDF8FA] border-t border-dashed border-gray-300 px-4 py-3 flex-shrink-0">
                 <div className="flex justify-between text-[12px] text-gray-500 mb-1">
+                  <span>{t("Items subtotal")}</span>
+                  <span>{subTotal.toLocaleString()} XOF</span>
+                </div>
+                <div className="flex justify-between text-[12px] text-gray-500 mb-1">
                   <span>{t("Tax")} 6%</span>
-                  <span>{tax.toFixed(2)} XOF</span>
+                  <span>{tax.toLocaleString()} XOF</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-[14px] font-bold text-gray-900">
-                    {t("Subtotal")} <span className="text-[11px] font-medium text-gray-500">({t("Incl. tax")})</span>
+                    {t("Total")}
                   </div>
                   <div className="text-[14px] font-bold text-gray-900">
                     {total.toLocaleString()} XOF
@@ -1280,6 +1303,16 @@ const Orders: React.FC = () => {
         open={showKitchenSuccess}
         onClose={() => setShowKitchenSuccess(false)}
         itemCount={items.length}
+        orderId={currentOrder?.orderId}
+        tableLabel={
+          currentOrder?.tableId
+            ? currentOrder.tableId === "Quick-Table"
+              ? t("Quick order")
+              : t("Table {{table}}", {
+                  table: currentOrder.tableId.replace(/^t-/i, ""),
+                })
+            : undefined
+        }
       />
 
       <CancelOrderModal

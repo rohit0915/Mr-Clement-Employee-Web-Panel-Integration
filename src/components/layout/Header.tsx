@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 
-import { useStore } from '@/store/zustandStores';
 import { useWalkthroughStore } from '@/store/walkthroughStore';
-import type { RootState } from '@/redux/store';
+import { useGetProfileQuery } from '@/redux/api/settingsApi';
 
 import HamburgerIcon from '@/assets/navbar/hamburger_menu.svg';
 import SearchIcon from '@/assets/navbar/search_icon.svg';
@@ -29,14 +27,6 @@ export interface Notification {
   body: string;
   time: string;
   read: boolean;
-}
-
-export interface HeaderUser {
-  user_id?: number;
-  name?: string;
-  Name?: string;
-  user_image?: string | null;
-  profilePic?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -118,10 +108,7 @@ const Header: React.FC = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
 
-  const zustandUser = useStore((state) => state.user);
-  const authUser = useSelector(
-    (s: RootState) => s.auth.user as HeaderUser | null,
-  );
+  const { data: profileResponse } = useGetProfileQuery();
   const nextWalkthroughStep = useWalkthroughStore((s) => s.next);
   const isProfileWalkthroughStep = useWalkthroughStore(
     (s) => s.isActive && s.steps[s.currentStep]?.selector === '.profile-btn',
@@ -129,15 +116,15 @@ const Header: React.FC = () => {
 
   /* ---------------- Derived user ---------------- */
   const displayName = useMemo(() => {
+    const profile = profileResponse?.data;
     return (
-      authUser?.name ||
-      authUser?.Name ||
-      zustandUser?.name ||
-      t('Guest')
+      profile?.full_name?.trim() ||
+      `${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim() ||
+      t('Employee')
     );
-  }, [authUser, zustandUser, t]);
+  }, [profileResponse, t]);
 
-  const displayAvatar = authUser?.user_image || zustandUser?.profilePic || undefined;
+  const displayAvatar = profileResponse?.data.profile_image || undefined;
   const avatarInitial = displayName.charAt(0).toUpperCase();
 
   /* ---------------- Language ---------------- */

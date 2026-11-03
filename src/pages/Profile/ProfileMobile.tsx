@@ -242,7 +242,7 @@ const ChangePasswordMobile = ({ onBack, user }: { onBack: () => void; user?: Use
               className="text-xs font-semibold text-[#D32F2F]" 
               onClick={() => toast.error(t("Please enter your current password below."))}
             >
-              {t('Forget Password')}
+              {t('Forgot password')}
             </button>
           </div>
           <div className="relative">

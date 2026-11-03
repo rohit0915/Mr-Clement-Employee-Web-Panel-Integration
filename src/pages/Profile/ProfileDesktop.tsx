@@ -521,7 +521,7 @@ const ProfileDesktop: React.FC<ProfileDesktopProps> = ({
                 </div>
                 <div>
                   <div className="font-bold text-gray-700 mb-1">
-                    {t("Employee id")}
+                    {t("Employee ID")}
                   </div>
                   <div
                     className="rounded-lg px-4 py-2"
@@ -572,7 +572,7 @@ const ProfileDesktop: React.FC<ProfileDesktopProps> = ({
           <div className="grid grid-cols-3 gap-6 w-full mb-8">
             <div>
               <div className="font-bold text-gray-700 mb-1">
-                {t("Employee id")}
+                {t("Employee ID")}
               </div>
               <div
                 className="rounded-lg px-4 py-2"

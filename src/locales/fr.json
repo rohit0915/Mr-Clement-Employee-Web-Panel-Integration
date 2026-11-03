@@ -532,15 +532,17 @@
   
  
   "Personal info": "Informations personnelles",
-  "You can check you all personal Information here.": "Vous pouvez consulter toutes vos informations personnelles ici.",
+  "View your personal details and contact information.": "Consultez vos informations personnelles et vos coordonnées.",
   
-  "Choose the notification preferences accordingly.": "Choisissez les préférences de notification en conséquence.",
+  "Manage your notification preferences.": "Gérez vos préférences de notification.",
   "Login & Security": "Connexion et sécurité",
-  "Change the password and email address.": "Modifier le mot de passe et l'adresse e-mail.",
+  "Update your recovery email and password.": "Modifiez votre adresse e-mail de récupération et votre mot de passe.",
   "Work Summary": "Résumé du travail",
-  "The work done and the money earned can be monitored here.": "Le travail effectué et l'argent gagné peuvent être suivis ici.",
+  "Review your attendance, hours, and work performance.": "Consultez votre présence, vos heures et vos performances au travail.",
   "Support Tickets": "Tickets de support",
   "Clock in / out": "Pointer l'arrivée / le départ",
+  "Create and track your support requests.": "Créez et suivez vos demandes d'assistance.",
+  "Record the start and end of your shift.": "Enregistrez le début et la fin de votre service.",
   
   "Failed to load user profile. Please try again.": "Échec du chargement du profil utilisateur. Veuillez réessayer.",
   
@@ -567,7 +569,9 @@
 
   "Responsibility": "Responsabilité",
 
-  "Employee id": "ID employé",
+  "Employee ID": "ID employé",
+  "Enter your employee ID": "Saisissez votre identifiant employé",
+  "Enter your password": "Saisissez votre mot de passe",
  
   "Work Details": "Détails du travail",
   "Onboarding Date": "Date d'intégration",
@@ -582,7 +586,7 @@
   "Enter Current Password": "Saisir le mot de passe actuel",
   "Show": "Afficher",
   "Password reset requires admin approval. Please contact your administrator.": "La réinitialisation du mot de passe nécessite l'approbation d'un administrateur. Veuillez contacter votre administrateur.",
-  "Forget Password": "Mot de passe oublié",
+  "Forgot password": "Mot de passe oublié",
   "Enter New Password": "Saisir le nouveau mot de passe",
   "Re-enter New Password": "Ressaisir le nouveau mot de passe",
 
@@ -666,6 +670,11 @@
   "Clocked in successfully!": "Arrivée pointée avec succès !",
  
   "Failed to update clock status. Please try again.": "Échec de la mise à jour du statut de pointage. Veuillez réessayer.",
+  "Welcome back!": "Bon retour !",
+  "Sign in to your Triaxx account.": "Connectez-vous à votre compte Triaxx.",
+  "{{tab}} sign-in is not available yet.": "La connexion {{tab}} n'est pas encore disponible.",
+  "Forgot password?": "Mot de passe oublié ?",
+  "Or sign in with": "Ou connectez-vous avec",
    
   "POS that works as hard as you.": "Un POS qui travaille aussi dur que vous.",
   "and Faster than you.": "et plus rapide que vous.",

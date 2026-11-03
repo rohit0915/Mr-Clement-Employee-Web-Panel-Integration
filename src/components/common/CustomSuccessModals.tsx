@@ -1,9 +1,21 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from "react";
 import successIcon from "@/assets/order/success_icon_large.svg";
+import { useTranslation } from "react-i18next";
 
-// ✅ Kitchen Success Modal (Already existed, kept for reference)
-export const KitchenSuccessModal = ({ open, onClose, itemCount }: { open: boolean; onClose: () => void; itemCount: number }) => {
+export const KitchenSuccessModal = ({
+  open,
+  onClose,
+  itemCount,
+  orderId,
+  tableLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  itemCount: number;
+  orderId?: string;
+  tableLabel?: string;
+}) => {
+  const { t } = useTranslation();
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -12,11 +24,22 @@ export const KitchenSuccessModal = ({ open, onClose, itemCount }: { open: boolea
         <div className="flex justify-center mb-4">
           <img src={successIcon} alt="success" className="w-20 h-20" />
         </div>
-        <h2 className="text-xl font-bold text-[#00C853] mb-2">Order Sent to Kitchen</h2>
-        <p className="text-sm text-gray-600 mb-8">{itemCount} items sent to preparation.</p>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#00C853] text-white font-semibold">Continue</button>
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-[#00C853] text-[#00C853] font-semibold">Undo</button>
+        <h2 className="text-xl font-bold text-[#00C853] mb-2">{t("Order Sent to Kitchen")}</h2>
+        {(orderId || tableLabel) && (
+          <p className="text-sm font-semibold text-gray-800 mb-2">
+            {[orderId ? `#${orderId}` : null, tableLabel].filter(Boolean).join(" · ")}
+          </p>
+        )}
+        <p className="text-sm text-gray-600 mb-3">
+          {t("{{count}} items are now in the kitchen queue.", { count: itemCount })}
+        </p>
+        <p className="text-xs text-gray-500 mb-8">
+          {t("Continue to view the order, then start another order when ready.")}
+        </p>
+        <div className="flex">
+          <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#00C853] text-white font-semibold">
+            {t("Continue")}
+          </button>
         </div>
       </div>
     </div>
@@ -37,6 +60,7 @@ export const PaymentSuccessModal = ({
   method: string; 
   reference: string; 
 }) => {
+  const { t } = useTranslation();
   if (!open) return null;
 
   return (
@@ -49,7 +73,7 @@ export const PaymentSuccessModal = ({
         
         <h2 className="text-xl font-bold text-[#00C853] mb-2">Payment Received Successful !</h2>
         <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-          Your Dish has been created and will be updated in the menu in couple of minutes
+          {t("Payment was recorded successfully for order {{reference}}.", { reference })}
         </p>
 
         <div className="flex flex-col items-center gap-1 mb-8">

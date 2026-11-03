@@ -12,6 +12,7 @@ import {
   useRespondToShiftSwapMutation,
   useClockOutMutation,
 } from '../../redux/api/shiftApiSlice';
+import { useGetAttendanceDashboardQuery } from '@/redux/api/attendanceApi';
 import Loader from '@/components/Loader';
 
 type ShiftRecord = Record<string, unknown>;
@@ -34,6 +35,11 @@ export default function WorkShift() {
   const [respondingAction, setRespondingAction] = useState<'accepted' | 'rejected' | null>(null);
 
   const { data: apiResponse, isLoading, isError } = useGetShiftDashboardQuery();
+  const {
+    data: attendanceResponse,
+    isLoading: isAttendanceLoading,
+    isError: isAttendanceError,
+  } = useGetAttendanceDashboardQuery();
   const [requestSwap, { isLoading: isRequesting }] = useRequestShiftSwapMutation();
   const [respondToSwap] = useRespondToShiftSwapMutation();
   const [clockOut, { isLoading: isClockingOut }] = useClockOutMutation();
@@ -67,10 +73,27 @@ export default function WorkShift() {
     });
   };
 
-  const calculateWorkedTime = (startIso: string) => {
+  const calculateWorkedTime = (
+    startIso?: string,
+    endIso?: string | null,
+    breaks?: { start?: string; end?: string }[],
+  ) => {
     if (!startIso) return `0 ${t('hr')} 0 ${t('min')}`;
-    const diffMins = Math.floor((Date.now() - new Date(startIso).getTime()) / 60000);
-    return `${Math.floor(diffMins / 60)} ${t('hr')} ${diffMins % 60} ${t('min')}`;
+    const start = new Date(startIso).getTime();
+    const end = endIso ? new Date(endIso).getTime() : Date.now();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return `0 ${t('hr')} 0 ${t('min')}`;
+    }
+
+    const breakMinutes = (breaks ?? []).reduce((total, pause) => {
+      if (!pause.start) return total;
+      const breakStart = new Date(pause.start).getTime();
+      const breakEnd = pause.end ? new Date(pause.end).getTime() : end;
+      if (!Number.isFinite(breakStart) || !Number.isFinite(breakEnd)) return total;
+      return total + Math.max(0, Math.min(end, breakEnd) - Math.max(start, breakStart)) / 60000;
+    }, 0);
+    const workedMinutes = Math.max(0, Math.floor((end - start) / 60000 - breakMinutes));
+    return `${Math.floor(workedMinutes / 60)} ${t('hr')} ${workedMinutes % 60} ${t('min')}`;
   };
 
   // ✅ Status styling helper for outgoing cards
@@ -185,12 +208,16 @@ export default function WorkShift() {
   };
 
   // ---------- Loading / Error ----------
-  if (isLoading) return <div className="p-8 text-center text-gray-600"> <div className="flex items-center justify-center w-full min-h-[60vh]">
+  if (isLoading || isAttendanceLoading) return <div className="p-8 text-center text-gray-600"> <div className="flex items-center justify-center w-full min-h-[60vh]">
     <Loader />
   </div></div>;
   if (isError) return <div className="p-8 text-center text-red-500">{t('Failed to load shift data. Please try again.')}</div>;
+  if (isAttendanceError || !attendanceResponse?.data) {
+    return <div className="p-8 text-center text-red-500">{t('Could not load attendance status. Please try again.')}</div>;
+  }
 
   const currentShift = dashboardData?.current_shift ?? null;
+  const currentAttendance = attendanceResponse.data.current_attendance;
   const upcomingShifts = dashboardData?.upcoming_shifts ?? [];
   const teamSchedule = Array.isArray(dashboardData?.team_schedule) ? dashboardData.team_schedule : [];
   const swapRequests = dashboardData?.incoming_swap_requests ?? [];
@@ -293,21 +320,28 @@ export default function WorkShift() {
               <h2 className="text-xl font-extrabold text-black mb-4">{t('Today')}</h2>
 
               <div className="border-[3px] border-[#f8e1e6] rounded-xl p-5 relative bg-white shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05)]">
-                {currentShift ? (
+                {currentAttendance?.clock_in && !currentAttendance.clock_out ? (
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="inline-flex items-center gap-1.5 bg-[#2ecc71] text-white px-3 py-1.5 rounded-full text-sm font-medium mb-3">
-                        <FiCheckCircle /> {t('Shift Active')}
+                        <FiCheckCircle /> {t('On Shift')}
                       </span>
                       <p className="text-[#555555] mb-1 text-[15px]">
-                        {t('Started:')} <span className="text-black font-bold">{formatTime(currentShift.start_at)}</span>
+                        {t('Clocked in:')} <span className="text-black font-bold">{formatTime(currentAttendance.clock_in)}</span>
                       </p>
                       <p className="text-[#555555] text-[15px]">
-                        {t('Worked:')} <span className="text-black font-bold">{calculateWorkedTime(currentShift.start_at)}</span>
+                        {t('Actual worked time:')}{' '}
+                        <span className="text-black font-bold">
+                          {calculateWorkedTime(
+                            currentAttendance.clock_in,
+                            null,
+                            currentAttendance.breaks,
+                          )}
+                        </span>
                       </p>
                     </div>
                     <div className="text-right flex flex-col items-end">
-                      <p className="font-bold text-[#333333] text-[13px] mb-1">{formatDate(currentShift.start_at)}</p>
+                      <p className="font-bold text-[#333333] text-[13px] mb-1">{formatDate(currentAttendance.clock_in)}</p>
                       <p className="text-lg font-extrabold text-black mb-3">
                         {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
@@ -321,7 +355,29 @@ export default function WorkShift() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center text-gray-500 py-4 font-medium">{t('No active shift currently.')}</div>
+                  <div className="py-2">
+                    <span className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full text-sm font-medium mb-3">
+                      {t('Off Shift')}
+                    </span>
+                    {currentAttendance?.clock_in && currentAttendance.clock_out && (
+                      <p className="text-[#555555] text-[15px]">
+                        {t('Actual worked time:')}{' '}
+                        <span className="text-black font-bold">
+                          {calculateWorkedTime(
+                            currentAttendance.clock_in,
+                            currentAttendance.clock_out,
+                            currentAttendance.breaks,
+                          )}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+                {currentShift && (
+                  <div className="mt-4 border-t border-gray-100 pt-3 text-sm text-gray-600">
+                    <span className="font-semibold">{t('Scheduled hours:')}</span>{' '}
+                    {formatTime(currentShift.start_at)} - {formatTime(currentShift.end_at)}
+                  </div>
                 )}
               </div>
             </div>

@@ -488,9 +488,18 @@ const NewReservationModal = ({
                   required
                   step={1}
                   value={formData.people_count}
+                  aria-invalid={exceedsTableCapacity}
+                  aria-describedby={exceedsTableCapacity ? 'new-reservation-party-size-error' : undefined}
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
+                {exceedsTableCapacity && (
+                  <p id="new-reservation-party-size-error" role="alert" className="mt-1 text-xs text-red-600">
+                    {t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
+                      capacity: getTableCapacity(selectedFormTable),
+                    })}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -520,6 +529,14 @@ const NewReservationModal = ({
                   onChange={handleChange}
                   required
                   disabled={isLoadingTables || tables.length === 0 || !floorId}
+                  aria-invalid={isTableLoadError || (!isLoadingTables && floorId > 0 && tables.length === 0)}
+                  aria-describedby={
+                    isTableLoadError
+                      ? 'new-reservation-table-error'
+                      : !isLoadingTables && floorId > 0 && tables.length === 0
+                        ? 'new-reservation-table-empty'
+                        : undefined
+                  }
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50"
                 >
                   <option value={0}>{isLoadingTables ? t('Loading...') : t('Select a table')}</option>
@@ -529,9 +546,9 @@ const NewReservationModal = ({
                     </option>
                   ))}
                 </select>
-                {isTableLoadError && <p className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
+                {isTableLoadError && <p id="new-reservation-table-error" role="alert" className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
                 {!isLoadingTables && !isTableLoadError && floorId > 0 && tables.length === 0 && (
-                  <p className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
+                  <p id="new-reservation-table-empty" className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
                 )}
               </div>
               <div className="col-span-2">
@@ -1206,11 +1223,13 @@ export default function ReservationPage() {
                     required={!selectedForInline}
                     step={1}
                     value={inlineForm.people_count}
+                    aria-invalid={inlineExceedsTableCapacity}
+                    aria-describedby={inlineExceedsTableCapacity ? 'inline-reservation-party-size-error' : undefined}
                     onChange={(e) => setInlineForm((p) => ({ ...p, people_count: Number(e.target.value) }))}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500"
                   />
                   {inlineExceedsTableCapacity && (
-                    <p role="alert" className="mt-1 text-xs text-red-600">
+                    <p id="inline-reservation-party-size-error" role="alert" className="mt-1 text-xs text-red-600">
                       {t('Selected table has {{capacity}} seats. Choose a table with more seats or reduce party size.', {
                         capacity: getTableCapacity(selectedInlineTable),
                       })}
@@ -1259,6 +1278,14 @@ export default function ReservationPage() {
                       }));
                     }}
                     disabled={isLoadingInlineTables || inlineTables.length === 0 || !inlineForm.Floor}
+                    aria-invalid={isInlineTableLoadError || (!isLoadingInlineTables && inlineForm.Floor > 0 && inlineTables.length === 0)}
+                    aria-describedby={
+                      isInlineTableLoadError
+                        ? 'inline-reservation-table-error'
+                        : !isLoadingInlineTables && inlineForm.Floor > 0 && inlineTables.length === 0
+                          ? 'inline-reservation-table-empty'
+                          : undefined
+                    }
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white disabled:bg-gray-50"
                   >
                     <option value={0}>{isLoadingInlineTables ? t('Loading...') : t('Select a table')}</option>
@@ -1268,9 +1295,9 @@ export default function ReservationPage() {
                       </option>
                     ))}
                   </select>
-                  {isInlineTableLoadError && <p className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
+                  {isInlineTableLoadError && <p id="inline-reservation-table-error" role="alert" className="mt-1 text-xs text-red-600">{t('Could not load tables for this floor.')}</p>}
                   {!isLoadingInlineTables && !isInlineTableLoadError && inlineForm.Floor > 0 && inlineTables.length === 0 && (
-                    <p className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
+                    <p id="inline-reservation-table-empty" className="mt-1 text-xs text-gray-500">{t('No tables are configured for this floor.')}</p>
                   )}
                 </div>
               </div>

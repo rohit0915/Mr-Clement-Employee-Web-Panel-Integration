@@ -60,8 +60,8 @@ export async function fetchSupportTickets(filter: 'all' | 'ongoing' | 'resolved'
     {
       ticketNumber: '2023-CS123',
       status: 'ongoing',
-      subject: 'How to deposit money to my portal?',
-      message: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum euismod, nisi vel consectetur euismod, nisl nisi consectetur nisi, euismod euismod nisi nisi euismod nisi.',
+      subject: 'I need help accessing my account',
+      message: 'I cannot access my account. Please help me reset my password.',
       businessName: 'Chinese Cuisine Restaurant',
       postedAt,
       avatar: '/assets/profile/user.svg',

@@ -37,7 +37,7 @@ export const shiftApiSlice = apiSlice.injectEndpoints({
         url: '/api/v1/employee/attendance/clock-out',
         method: 'POST',
       }),
-      invalidatesTags: ['ShiftDashboard'],
+      invalidatesTags: ['ShiftDashboard', 'AttendanceDashboard', 'AttendanceHistory'],
     }),
   }),
 });

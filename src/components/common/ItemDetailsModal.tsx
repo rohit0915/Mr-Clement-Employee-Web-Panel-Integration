@@ -72,18 +72,19 @@ const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
           <div className="font-semibold text-lg mb-0.5 text-left">{item.name}</div>
           <div className="text-[#00000099] text-sm mb-4 text-left">{item.itemType}</div>
           {/* Description */}
-          <div className="font-semibold text-xl mb-1 text-left">{item.name}</div>
-          <div className="text-[#00000099] text-sm mb-4 text-left font-normal">
-            {descPreview}
-            {item.description && item.description.length > 80 && !showFullDesc && (
-              <span
-                className="text-primary-gradient cursor-pointer ml-1 text-sm font-normal"
-                onClick={() => setShowFullDesc(true)}
-              >
-                Read More
-              </span>
-            )}
-          </div>
+          {descPreview && (
+            <div className="text-[#00000099] text-sm mb-4 text-left font-normal">
+              {descPreview}
+              {item.description && item.description.length > 80 && !showFullDesc && (
+                <span
+                  className="text-primary-gradient cursor-pointer ml-1 text-sm font-normal"
+                  onClick={() => setShowFullDesc(true)}
+                >
+                  Read More
+                </span>
+              )}
+            </div>
+          )}
           {/* Size */}
           <div className="w-full mb-6">
             <div className="font-semibold mb-2 text-left">Size</div>

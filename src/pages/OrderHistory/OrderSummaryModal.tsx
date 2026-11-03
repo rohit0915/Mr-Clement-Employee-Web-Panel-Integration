@@ -6,6 +6,8 @@ import { formatOrderMoney, type OrderHistoryBreakdown } from './orderBreakdown';
 interface OrderSummaryModalProps {
   open: boolean;
   onClose: () => void;
+  isLoading?: boolean;
+  loadError?: string;
   order: {
     items: OrderHistoryBreakdown['items'];
     subtotal: number;
@@ -13,6 +15,8 @@ interface OrderSummaryModalProps {
     total: number;
     breakdown: OrderHistoryBreakdown;
     orderId?: string;
+    fulfillmentType: string;
+    tableContext?: string;
     paymentType?: string;
     customerName?: string;
   };
@@ -23,6 +27,8 @@ interface OrderSummaryModalProps {
 export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
   open,
   onClose,
+  isLoading = false,
+  loadError = '',
   order,
   onUpdateItemQuantity,
   onChoosePaymentOption,
@@ -67,8 +73,21 @@ export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
         {/* Subtitle */}
         <div className="px-6 mb-6">
           <p className="text-[13px] font-medium text-[#C2185B]">
-            Check your Order Summary
+            Order #{order.orderId} · {order.fulfillmentType}
           </p>
+          {order.tableContext && (
+            <p className="mt-1 text-xs text-gray-500">{order.tableContext}</p>
+          )}
+          {isLoading && (
+            <p className="mt-2 text-xs text-gray-500" role="status">
+              Loading persisted order details…
+            </p>
+          )}
+          {loadError && (
+            <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-800" role="alert">
+              {loadError}
+            </p>
+          )}
         </div>
 
         {/* Items List */}

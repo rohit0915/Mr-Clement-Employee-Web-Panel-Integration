@@ -294,6 +294,7 @@ export const {
   useUpdateOrderStatusMutation,
   useCreatePaymentMutation,
   useGetOrderByIdQuery,
+  useLazyGetOrderByIdQuery,
   useGetOrderPdfUrlQuery,
   useLazyGetOrderPdfUrlQuery, 
   useGetAllOrdersQuery,

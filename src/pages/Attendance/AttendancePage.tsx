@@ -13,6 +13,7 @@ import {
   useCancelLeaveRequestMutation,
   useUpdateEmergencyContactMutation,
 } from '../../redux/api/attendanceApi';
+import { useGetProfileQuery } from '@/redux/api/settingsApi';
 import Loader from '@/components/Loader';
 
 // --- Icons ---
@@ -168,6 +169,12 @@ const AttendancePage = () => {
 
   const [breakForm, setBreakForm] = useState({ break_type: '', note: '' });
 
+  const {
+    data: profileResponse,
+    isLoading: isProfileLoading,
+    isError: isProfileError,
+  } = useGetProfileQuery();
+
   const [contactForm, setContactForm] = useState({
     name: '',
     phone: '',
@@ -201,7 +208,7 @@ const [cancellingId, setCancellingId] = useState<number | null>(null);
     useUpdateEmergencyContactMutation();
 
   // --- Derived ---
-  const employee = dash?.data.employee;
+  const employee = profileResponse?.data;
   const current = dash?.data.current_attendance;
 
   const onBreak = useMemo(
@@ -418,7 +425,7 @@ const [cancellingId, setCancellingId] = useState<number | null>(null);
     }, 1500);
   };
 
-  if (isLoading) {
+  if (isLoading || isProfileLoading) {
     return (
       <div className="flex items-center justify-center w-full min-h-[60vh]">
         <Loader />
@@ -426,7 +433,7 @@ const [cancellingId, setCancellingId] = useState<number | null>(null);
     );
   }
 
-  if (isError || !employee) {
+  if (isError || isProfileError || !employee) {
     return (
       <div className="min-h-screen flex items-center justify-center text-red-600 font-medium">
         {t('Failed to load attendance data. Please try again.')}
