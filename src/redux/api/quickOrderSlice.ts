@@ -10,6 +10,7 @@ import type {
   Floor,
   FloorWithTablesResponse,
   PaymentOptionsResponse,
+  BarTabClosePaymentBody,
 } from '@/types/order';
 
 export const quickOrderApi = createApi({
@@ -242,7 +243,10 @@ export const quickOrderApi = createApi({
       invalidatesTags: (_r, _e, arg) => [{ type: 'BarTabs', id: arg.tabId }, 'BarTabs'],
     }),
 
-    closeBarTabWithPayment: builder.mutation<{ success: boolean; data: any }, any>({
+    closeBarTabWithPayment: builder.mutation<
+      { success: boolean; data: any; message?: string },
+      BarTabClosePaymentBody
+    >({
       query: ({ tabId, ...body }) => ({
         url: `/api/v1/restaurant/bar-tabs/close/${tabId}/payment`,
         method: 'POST',

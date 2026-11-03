@@ -10,7 +10,7 @@ import {
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import LeftPanel from '@/components/common/LeftPanel';
 
-import TriaxxLogoImg from '@/assets/LOGOPlande.svg';
+import TriaxxLogoImg from '@/assets/tiaxx_logo.svg';
 import EyeIconImg from '@/assets/eye_icon.svg';
 import EyeSlashIconImg from '@/assets/eye-password-hide.svg';
 import FacebookIconImg from '@/assets/auth/facebook.svg';
@@ -365,7 +365,7 @@ const LoginPage: React.FC = () => {
         isMobile ? 'gradient-background-mobile' : 'gradient-background'
       } p-4 lg:p-0`}
     >
-      <div className="relative flex w-full max-w-sm flex-col rounded-3xl bg-white p-6 shadow-2xl overflow-visible lg:h-screen lg:max-w-none lg:flex-row lg:p-0 lg:shadow-none lg:rounded-none">
+      <div className="relative flex w-full max-w-sm flex-col rounded-3xl bg-white p-6 shadow-2xl overflow-visible lg:min-h-screen lg:max-w-none lg:flex-row lg:p-0 lg:shadow-none lg:rounded-none">
         
         {/* Pass language logic to LeftPanel */}
         <LeftPanel 
@@ -379,7 +379,7 @@ const LoginPage: React.FC = () => {
         />
 
         {/* Right column */}
-        <div className="relative z-10 w-full lg:w-2/5 lg:p-10 xl:px-20 flex flex-col justify-center">
+        <div className="relative z-10 w-full lg:w-2/5 lg:p-10 xl:px-20 flex flex-col justify-center lg:justify-start">
           
           {/* Top bar with Logo */}
           <div className="flex items-center justify-between gap-3 mb-6">
@@ -390,7 +390,7 @@ const LoginPage: React.FC = () => {
             <img
               src={TriaxxLogoImg}
               alt="TRIAXX Logo"
-              className="h-24 shrink-0"
+              className="w-40 h-auto shrink-0 object-contain"
             />
           </div>
 

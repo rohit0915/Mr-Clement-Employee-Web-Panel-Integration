@@ -21,6 +21,12 @@ export interface BarTab {
   CreateAt: string;
   total: number;
   subtotal: number;
+  tax?: number;
+  tax_amount?: number;
+  discount?: number;
+  discount_amount?: number;
+  balance?: number;
+  balance_due?: number;
   currency?: string;
   payment?: { currency?: string };
   items: Array<{
@@ -291,12 +297,18 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
     isLoading: drinksLoading,
     isError: drinksError,
   } = useGetAllItemsQuery({ type: 'Drink', category_id: 'all' });
-  const { data: paymentsRes } = useGetMyPaymentOptionsQuery();
+  const {
+    data: paymentsRes,
+    isLoading: paymentOptionsLoading,
+    isError: paymentOptionsError,
+    refetch: refetchPaymentOptions,
+  } = useGetMyPaymentOptionsQuery();
   const currency = getConfiguredCurrency(paymentsRes?.currency);
 
   const [createBarTab, { isLoading: creating }] = useCreateBarTabMutation();
   const [addBarTabItem, { isLoading: addingItem }] = useAddBarTabItemMutation();
   const [closeBarTab, { isLoading: closing }] = useCloseBarTabWithPaymentMutation();
+  const closeSubmissionLock = useRef(false);
 
   const tabs: BarTab[] = tabsRes?.data || [];
   const drinkItems = useMemo(
@@ -323,11 +335,12 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   );
 
   // ---------- UI state ----------
-  const [isHappyHourActive, setIsHappyHourActive] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddTabModal, setShowAddTabModal] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState<{ tabId: number; tabName: string } | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<BarTab | null>(null);
+  const [selectedPaymentOptionId, setSelectedPaymentOptionId] = useState<number | null>(null);
+  const [closeTabError, setCloseTabError] = useState('');
 
   // Form state
   const [clientName, setClientName] = useState('');
@@ -356,9 +369,6 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
         t_item.table_no?.toLowerCase().includes(q)
     );
   }, [tabs, search]);
-
-  const happyHourTotal = (tab: BarTab) =>
-    isHappyHourActive ? Math.round(tab.total * 0.9) : tab.total;
 
   // ---------- Handlers ----------
   const handleCreateTab = async () => {
@@ -449,29 +459,56 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
     }
   };
 
-  const handleCloseTab = async (tab: BarTab, method: 'Cash' | 'Credit Card') => {
-    const optionId = method === 'Cash' ? 1 : 3;
+  const handleCloseTab = async () => {
+    if (!paymentTarget || closing || closeSubmissionLock.current) return;
+    const selectedOption = paymentOptions.find(
+      (option) => option.id === selectedPaymentOptionId,
+    );
+    if (!selectedOption) {
+      setCloseTabError(t('Choose a configured payment method.'));
+      return;
+    }
+
+    closeSubmissionLock.current = true;
+    setCloseTabError('');
     try {
-      await closeBarTab({
-        tabId: tab.Bar_Tab_id,
-        Payment_Options_id: optionId,
-        payment_method: method,
+      const response = await closeBarTab({
+        tabId: paymentTarget.Bar_Tab_id,
+        Payment_Options_id: selectedOption.id,
+        payment_method: selectedOption.name,
         payment_confirmed: true,
-        ...(method === 'Credit Card' ? { payment_reference: `CARD-${Date.now()}` } : {}),
       }).unwrap();
+      if (response?.success === false) {
+        throw new Error(getResponseMessage(response) || t('Failed to close tab. Please retry.'));
+      }
+      toast.success(getResponseMessage(response) || t('Bar tab payment confirmed.'));
       setPaymentTarget(null);
+      setSelectedPaymentOptionId(null);
       refetchTabs();
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.data?.message || t('Failed to close tab.'));
+    } catch (error: unknown) {
+      console.error('Failed to close bar tab:', error);
+      const message = getSubmissionErrorMessage(error, t('Failed to close tab. Please retry.'));
+      setCloseTabError(message);
+      toast.error(message);
+    } finally {
+      closeSubmissionLock.current = false;
     }
   };
 
-  const paymentOptions: any[] = Array.isArray(paymentsRes?.data) 
-    ? paymentsRes.data 
-    : Array.isArray(paymentsRes) 
-      ? paymentsRes 
-      : [];
+  const paymentOptions = (paymentsRes?.methods?.length
+    ? paymentsRes.methods
+    : Array.isArray(paymentsRes?.data)
+      ? paymentsRes.data
+      : []
+  )
+    .map((option: any) => ({
+      id: Number(option.Payment_Options_id ?? option.id),
+      name: String(option.option ?? option.title ?? option.Name ?? option.name ?? '').trim(),
+      details: typeof option.Details === 'string' ? option.Details : undefined,
+    }))
+    .filter((option: { id: number; name: string }) =>
+      Number.isFinite(option.id) && option.id > 0 && option.name.length > 0,
+    );
 
   // ---------- Render ----------
   return (
@@ -499,25 +536,6 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Happy Hour toggle */}
-          <div
-            className={`flex items-center justify-between px-4 py-2 rounded-full shadow-sm cursor-pointer transition-colors duration-300 w-[175px] ${
-              isHappyHourActive ? 'bg-[#00C853]' : 'bg-[#FF3B30]'
-            }`}
-            onClick={() => setIsHappyHourActive((v) => !v)}
-          >
-            <div className="relative w-10 h-5 bg-white rounded-full flex-shrink-0 shadow-inner">
-              <div
-                className={`absolute w-4 h-4 rounded-full bg-[#8E24AA] shadow-md transform transition-transform duration-300 top-0.5 ${
-                  isHappyHourActive ? 'translate-x-[22px]' : 'translate-x-0.5'
-                }`}
-              />
-            </div>
-            <span className="text-[11px] font-bold text-white leading-none whitespace-nowrap">
-              {isHappyHourActive ? t('Happy Hour Active') : t('Happy Hour Inactive')}
-            </span>
-          </div>
-
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -595,10 +613,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-xs text-gray-500 font-medium">{t('Running total')}</span>
                     <span className="text-sm font-bold text-gray-900">
-                      {formatMoney(happyHourTotal(tab), currency)}
-                      {isHappyHourActive && (
-                        <span className="text-[10px] text-[#00C853] ml-1">-10%</span>
-                      )}
+                      {formatMoney(tab.total, currency)}
                     </span>
                   </div>
 
@@ -617,7 +632,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                       + {t('Add Item')}
                     </button>
                     <button
-                      onClick={() => setPaymentTarget(tab)}
+                      onClick={() => {
+                        setCloseTabError('');
+                        setSelectedPaymentOptionId(null);
+                        setPaymentTarget(tab);
+                      }}
                       className="flex-1 bg-white border border-gray-200 text-gray-700 py-1.5 rounded-md text-xs font-bold hover:bg-gray-50 transition-all"
                     >
                       {t('Close tab')}
@@ -920,57 +939,139 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                 {paymentTarget.client_name} - {paymentTarget.table_no}
               </p>
               <button
-                onClick={() => setPaymentTarget(null)}
+                onClick={() => {
+                  if (closing) return;
+                  setPaymentTarget(null);
+                  setSelectedPaymentOptionId(null);
+                  setCloseTabError('');
+                }}
+                disabled={closing}
                 className="absolute top-4 right-4 text-white/80 hover:text-white"
               >
                 ✕
               </button>
             </div>
             <div className="p-6">
-              <div className="flex justify-between mb-2 text-sm">
-                <span className="text-gray-500">{t('Subtotal')}</span>
-                <span className="font-semibold">
-                  {formatMoney(paymentTarget.subtotal, currency)}
-                </span>
+              <div className="mb-4 max-h-40 overflow-y-auto rounded-lg border border-gray-100">
+                {paymentTarget.items.length > 0 ? (
+                  <ul className="divide-y divide-gray-100 px-3">
+                    {paymentTarget.items.map((item) => (
+                      <li key={item._id} className="flex justify-between gap-3 py-2 text-sm">
+                        <span className="text-gray-700">
+                          {item.quantity}x {item.drink_name}
+                          {item.modifiers?.length ? ` - ${item.modifiers.join(', ')}` : ''}
+                        </span>
+                        <span className="shrink-0 font-medium">
+                          {formatMoney(item.line_total, currency)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-2 text-sm text-gray-500">{t('No items on this tab.')}</p>
+                )}
               </div>
-              <div className="flex justify-between mb-4 text-sm">
-                <span className="text-gray-500">{t('Total due')}</span>
-                <span className="font-bold text-gray-900">
-                  {formatMoney(happyHourTotal(paymentTarget), currency)}
-                </span>
+              <div className="space-y-2 border-t border-gray-100 pt-3 mb-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{t('Subtotal')}</span>
+                  <span className="font-semibold">{formatMoney(paymentTarget.subtotal, currency)}</span>
+                </div>
+                {(paymentTarget.tax_amount ?? paymentTarget.tax) !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('Tax')}</span>
+                    <span>{formatMoney(paymentTarget.tax_amount ?? paymentTarget.tax ?? 0, currency)}</span>
+                  </div>
+                )}
+                {(paymentTarget.discount_amount ?? paymentTarget.discount) !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('Discount')}</span>
+                    <span>-{formatMoney(paymentTarget.discount_amount ?? paymentTarget.discount ?? 0, currency)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-gray-100 pt-2">
+                  <span className="font-bold text-gray-900">{t('Total due')}</span>
+                  <span className="font-bold text-gray-900">
+                    {formatMoney(paymentTarget.balance_due ?? paymentTarget.balance ?? paymentTarget.total, currency)}
+                  </span>
+                </div>
               </div>
 
               <p className="text-xs font-bold text-gray-600 mb-2">{t('Payment method')}</p>
               <div className="space-y-2 mb-4">
-                {paymentOptions.length > 0 ? (
-                  paymentOptions.map((po: any) => (
+                {paymentOptionsLoading ? (
+                  <p className="text-sm text-gray-500">{t('Loading payment methods…')}</p>
+                ) : paymentOptionsError ? (
+                  <div className="text-sm text-red-700" role="alert">
+                    <p>{t('Could not load payment methods.')}</p>
                     <button
-                      key={po.Payment_Options_id ?? po.id ?? po.title}
-                      onClick={() => handleCloseTab(paymentTarget, po.title?.toLowerCase().includes('cash') ? 'Cash' : 'Credit Card')}
-                      disabled={closing}
-                      className="w-full text-left border border-gray-200 rounded-lg px-4 py-2 text-sm hover:border-[#8E24AA] hover:bg-[#F3E5F5] transition-colors disabled:opacity-50"
+                      type="button"
+                      onClick={() => refetchPaymentOptions()}
+                      className="mt-1 font-semibold underline"
                     >
-                      <span className="font-semibold">{po.title ?? po.Name ?? po.name}</span>
+                      {t('Retry')}
                     </button>
+                  </div>
+                ) : paymentOptions.length > 0 ? (
+                  paymentOptions.map((option: { id: number; name: string; details?: string }) => (
+                    <label
+                      key={option.id}
+                      className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm cursor-pointer transition-colors ${
+                        selectedPaymentOptionId === option.id
+                          ? 'border-[#8E24AA] bg-[#F3E5F5]'
+                          : 'border-gray-200 hover:border-[#8E24AA]'
+                      }`}
+                    >
+                      <span>
+                        <span className="block font-semibold">{option.name}</span>
+                        {option.details && <span className="text-xs text-gray-500">{option.details}</span>}
+                      </span>
+                      <input
+                        type="radio"
+                        name="bar-tab-payment-method"
+                        value={option.id}
+                        checked={selectedPaymentOptionId === option.id}
+                        onChange={() => {
+                          setSelectedPaymentOptionId(option.id);
+                          setCloseTabError('');
+                        }}
+                        disabled={closing}
+                        className="accent-[#8E24AA]"
+                      />
+                    </label>
                   ))
                 ) : (
-                  <>
-                    <button
-                      onClick={() => handleCloseTab(paymentTarget, 'Cash')}
-                      disabled={closing}
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm hover:border-[#8E24AA] disabled:opacity-50"
-                    >
-                      {t('Cash')}
-                    </button>
-                    <button
-                      onClick={() => handleCloseTab(paymentTarget, 'Credit Card')}
-                      disabled={closing}
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm hover:border-[#8E24AA] disabled:opacity-50"
-                    >
-                      {t('Credit Card')}
-                    </button>
-                  </>
+                  <p className="text-sm text-red-700" role="alert">
+                    {t('No payment methods are configured. Configure a payment method before checkout.')}
+                  </p>
                 )}
+              </div>
+              {closeTabError && (
+                <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                  {closeTabError}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (closing) return;
+                    setPaymentTarget(null);
+                    setSelectedPaymentOptionId(null);
+                    setCloseTabError('');
+                  }}
+                  disabled={closing}
+                  className="flex-1 rounded-lg border border-gray-300 py-2 text-sm font-bold text-gray-700 disabled:opacity-50"
+                >
+                  {t('Cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseTab}
+                  disabled={closing || paymentOptionsLoading || !selectedPaymentOptionId}
+                  className="flex-1 rounded-lg bg-[#8E24AA] py-2 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {closing ? t('Processing payment…') : t('Confirm payment')}
+                </button>
               </div>
             </div>
           </div>
