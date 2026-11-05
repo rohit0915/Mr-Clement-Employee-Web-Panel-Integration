@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'; // ✅ Added i18n
 import toast from 'react-hot-toast';
 import {
   useGetReservationsQuery,
-  useCreateReservationMutation,
+  useGetEmployeeReservationSlotsQuery,
+  useCreateEmployeeReservationMutation,
   useUpdateReservationMutation,
   useDeleteReservationMutation,
 } from '../../redux/api/reservationApi';
@@ -19,27 +20,42 @@ import type {
 import type { Floor, FloorWithTablesResponse, Table } from '../../types/order';
 
 const toastStyle = { borderRadius: '10px', background: '#333', color: '#fff' };
-const RESERVATION_SLOT_TIME = '07:00 PM - 08:00 PM';
-const RESERVATION_WINDOW_DAYS = 10;
+const RESERVATION_WINDOW_DAYS = 9;
 const PHONE_DIGIT_COUNT = 10;
 const GUEST_NAME_MAX_LENGTH = 100;
 const NOTES_MAX_LENGTH = 500;
-const DEFAULT_RESERVATION_DURATION = 60;
 
 type NewReservationDraft = CreateReservationPayload & {
   reservation_time: string;
+  reservation_end_time: string;
 };
 
-const formatSlotTime = (time: string, durationMinutes: number): string => {
+const getTimeInMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
-  const start = hours * 60 + minutes;
-  const formatTime = (totalMinutes: number) => {
-    const hour = Math.floor(totalMinutes / 60) % 24;
-    const minute = totalMinutes % 60;
-    const suffix = hour < 12 ? 'AM' : 'PM';
-    return `${String(hour % 12 || 12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${suffix}`;
+  return hours * 60 + minutes;
+};
+
+const getSlotDurationMinutes = (startTime: string, endTime: string): number => {
+  const start = getTimeInMinutes(startTime);
+  let end = getTimeInMinutes(endTime);
+  if (end <= start) end += 24 * 60;
+  return end - start;
+};
+
+const parseTimeRange = (value: string): [string, string] | null => {
+  const match =
+    /^(0[1-9]|1[0-2]):([0-5]\d) (AM|PM) - (0[1-9]|1[0-2]):([0-5]\d) (AM|PM)$/.exec(value);
+  if (!match) return null;
+
+  const to24HourTime = (hour: string, minute: string, period: string) => {
+    const hours = (Number(hour) % 12) + (period === 'PM' ? 12 : 0);
+    return `${String(hours).padStart(2, '0')}:${minute}`;
   };
-  return `${formatTime(start)} - ${formatTime(start + durationMinutes)}`;
+
+  return [
+    to24HourTime(match[1], match[2], match[3]),
+    to24HourTime(match[4], match[5], match[6]),
+  ];
 };
 
 const normalizePhone = (value: string): string =>
@@ -137,8 +153,9 @@ const NewReservationModal = ({
   const [formData, setFormData] = useState<NewReservationDraft>({
     Reservations_online: false,
     Customer_id: 25,
-    slots: 'Dinner',
-    slots_time: RESERVATION_SLOT_TIME,
+    slots: '',
+    slots_time: '',
+    occasion: '',
     title: 'Mohammed Al-Farsi',
     customer_mobile: '',
     Floor: 0,
@@ -147,10 +164,18 @@ const NewReservationModal = ({
     PaymentStatus: 'UnPaid',
     Table_id: 0,
     Date_time: '',
-    reservation_time: '19:30',
-    duration_minutes: DEFAULT_RESERVATION_DURATION,
+    reservation_time: '',
+    reservation_end_time: '',
+    duration_minutes: 0,
     Notes: 'Allergies: nuts',
     Status: true,
+  });
+  const {
+    currentData: generatedSlotsData,
+    isFetching: isLoadingGeneratedSlots,
+    isError: isGeneratedSlotsError,
+  } = useGetEmployeeReservationSlotsQuery(Number(formData.Table_id), {
+    skip: !formData.Table_id,
   });
 
   useEffect(() => {
@@ -180,6 +205,16 @@ const NewReservationModal = ({
   const selectedFormTable = tables.find(
     (table: Table) => table.Table_id === Number(formData.Table_id),
   );
+  const availableSlotsForDate =
+    generatedSlotsData?.generated_slots
+      .find((day) => day.date === formData.Date_time)
+      ?.slots.filter(
+        (slot) =>
+          slot.available &&
+          slot.tables.some(
+            (table) => table.table_id === Number(formData.Table_id) && table.available,
+          ),
+      ) ?? [];
   const exceedsTableCapacity =
     selectedFormTable != null &&
     Number(formData.people_count) > getTableCapacity(selectedFormTable);
@@ -204,6 +239,11 @@ const NewReservationModal = ({
         ...prev,
         Floor: Number(value),
         Table_id: 0,
+        Date_time: '',
+        slots: '',
+        slots_time: '',
+        reservation_time: '',
+        reservation_end_time: '',
       }));
       return;
     }
@@ -214,6 +254,41 @@ const NewReservationModal = ({
         Table_id: Number(value),
         Floor: selectedTable?.Floor_id ?? floorId,
         Capacity_count: selectedTable ? getTableCapacity(selectedTable) : prev.Capacity_count,
+        Date_time: '',
+        slots: '',
+        slots_time: '',
+        reservation_time: '',
+        reservation_end_time: '',
+      }));
+      return;
+    }
+    if (name === 'Date_time') {
+      setFormData((prev) => ({
+        ...prev,
+        Date_time: value,
+        slots: '',
+        slots_time: '',
+        reservation_time: '',
+        reservation_end_time: '',
+      }));
+      return;
+    }
+    if (name === 'generated_slot') {
+      const selectedSlot = availableSlotsForDate[Number(value)];
+      const timeRange = selectedSlot ? parseTimeRange(selectedSlot.slots_time) : null;
+      if (!selectedSlot || !timeRange) {
+        toast.error(t('Select a valid generated reservation slot.'));
+        return;
+      }
+      setFormData((prev) => ({
+        ...prev,
+        slots: selectedSlot.slot_type,
+        slots_time: selectedSlot.slots_time,
+        reservation_time: timeRange[0],
+        reservation_end_time: timeRange[1],
+        duration_minutes:
+          generatedSlotsData?.slot_duration ??
+          getSlotDurationMinutes(timeRange[0], timeRange[1]),
       }));
       return;
     }
@@ -242,16 +317,13 @@ const NewReservationModal = ({
       toast.error(t('Select a reservation date within the next 10 days.'));
       return;
     }
-    if (!/^\d{2}:\d{2}$/.test(formData.reservation_time)) {
-      toast.error(t('Select a valid reservation time.'));
-      return;
-    }
-    if (
-      !Number.isInteger(Number(formData.duration_minutes)) ||
-      Number(formData.duration_minutes) < 30 ||
-      Number(formData.duration_minutes) > 480
-    ) {
-      toast.error(t('Duration must be between 30 and 480 minutes.'));
+    const selectedGeneratedSlot = availableSlotsForDate.find(
+      (slot) =>
+        slot.slots_time === formData.slots_time &&
+        slot.slot_type === formData.slots,
+    );
+    if (!selectedGeneratedSlot) {
+      toast.error(t('Select an available slot generated for this table and date.'));
       return;
     }
     if (!Number.isInteger(Number(formData.Table_id)) || Number(formData.Table_id) < 1) {
@@ -281,7 +353,7 @@ const NewReservationModal = ({
       Capacity_count: getTableCapacity(selectedTable),
       Table_id: selectedTable.Table_id,
       people_count: Number(formData.people_count),
-      slots_time: formatSlotTime(formData.reservation_time, Number(formData.duration_minutes)),
+      duration_minutes: generatedSlotsData?.slot_duration ?? formData.duration_minutes,
       Date_time: formData.Date_time,
     }));
     setIsReviewing(true);
@@ -294,8 +366,18 @@ const NewReservationModal = ({
       toast.error(t('Select a table from the selected floor.'));
       return;
     }
+    const timeRange = parseTimeRange(formData.slots_time);
+    if (!timeRange) {
+      setIsReviewing(false);
+      toast.error(t('Select an available slot generated for this table and date.'));
+      return;
+    }
 
-    const { reservation_time: _reservationTime, ...payloadDraft } = formData;
+    const {
+      reservation_time: _reservationTime,
+      reservation_end_time: _reservationEndTime,
+      ...payloadDraft
+    } = formData;
     const created = await onSubmit({
       ...payloadDraft,
       customer_mobile: formData.customer_mobile,
@@ -303,7 +385,7 @@ const NewReservationModal = ({
       Capacity_count: getTableCapacity(selectedTable),
       Table_id: selectedTable.Table_id,
       people_count: Number(formData.people_count),
-      slots_time: formatSlotTime(formData.reservation_time, Number(formData.duration_minutes)),
+      duration_minutes: generatedSlotsData?.slot_duration ?? formData.duration_minutes,
       Date_time: formData.Date_time,
     });
     if (created) {
@@ -311,8 +393,9 @@ const NewReservationModal = ({
       setFormData({
         Reservations_online: false,
         Customer_id: 25,
-        slots: 'Dinner',
-        slots_time: RESERVATION_SLOT_TIME,
+        slots: '',
+        slots_time: '',
+        occasion: '',
         title: 'Mohammed Al-Farsi',
         customer_mobile: '',
         Floor: floorId,
@@ -321,8 +404,9 @@ const NewReservationModal = ({
         PaymentStatus: 'UnPaid',
         Table_id: 0,
         Date_time: '',
-        reservation_time: '19:30',
-        duration_minutes: DEFAULT_RESERVATION_DURATION,
+        reservation_time: '',
+        reservation_end_time: '',
+        duration_minutes: 0,
         Notes: 'Allergies: nuts',
         Status: true,
       });
@@ -419,32 +503,19 @@ const NewReservationModal = ({
                 <p id="new-reservation-phone-help" className="sr-only">{t('Enter a 10-digit contact number.')}</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div>
                 <label htmlFor="new-reservation-occasion" className="block text-[11px] text-gray-600 mb-1">{t('Occasion')}</label>
                 <input
                   id="new-reservation-occasion"
                   type="text"
+                  name="occasion"
+                  value={formData.occasion ?? ''}
                   placeholder={t('Birthday, Business, VIP...')}
                   maxLength={100}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="new-reservation-duration" className="block text-[11px] text-gray-600 mb-1">{t('Estimated Duration')}</label>
-                <input
-                  id="new-reservation-duration"
-                  type="number"
-                  name="duration_minutes"
-                  min={30}
-                  max={480}
-                  step={30}
-                  value={formData.duration_minutes}
-                  aria-describedby="new-reservation-duration-help"
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                 />
-                <p id="new-reservation-duration-help" className="sr-only">{t('Duration must be between 30 and 480 minutes.')}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -465,17 +536,48 @@ const NewReservationModal = ({
                 <p id="new-reservation-date-time-help" className="sr-only">{t('Select a reservation date within the next 10 days.')}</p>
               </div>
               <div>
-                <label htmlFor="new-reservation-time" className="block text-[11px] text-gray-600 mb-1">{t('Reservation time')}</label>
-                <input
+                <label htmlFor="new-reservation-time" className="block text-[11px] text-gray-600 mb-1">{t('Generated reservation slot')}</label>
+                <select
                   id="new-reservation-time"
-                  type="time"
-                  name="reservation_time"
-                  value={formData.reservation_time}
-                  required
-                  step={60}
+                  name="generated_slot"
+                  value={String(availableSlotsForDate.findIndex(
+                    (slot) => slot.slots_time === formData.slots_time &&
+                      slot.slot_type === formData.slots,
+                  ))}
                   onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                />
+                  required
+                  disabled={
+                    !formData.Table_id ||
+                    !formData.Date_time ||
+                    isLoadingGeneratedSlots ||
+                    isGeneratedSlotsError ||
+                    availableSlotsForDate.length === 0
+                  }
+                  aria-describedby="new-reservation-slot-help"
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50"
+                >
+                  <option value="-1">
+                    {isLoadingGeneratedSlots
+                      ? t('Loading available slots...')
+                      : !formData.Table_id
+                        ? t('Select a table first')
+                        : !formData.Date_time
+                          ? t('Select a reservation date first')
+                          : t('Select an available slot')}
+                  </option>
+                  {availableSlotsForDate.map((slot, index) => (
+                    <option key={`${slot.slot_type}-${slot.slots_time}`} value={index}>
+                      {slot.slots_time} ({t(slot.slot_type)})
+                    </option>
+                  ))}
+                </select>
+                <p id="new-reservation-slot-help" className="mt-1 text-[10px] text-gray-500">
+                  {isGeneratedSlotsError
+                    ? t('Could not load generated slots for this table.')
+                    : !isLoadingGeneratedSlots && formData.Date_time && !availableSlotsForDate.length
+                      ? t('No available generated slots for this table and date.')
+                      : formData.slots_time}
+                </p>
               </div>
               <div>
                 <label htmlFor="new-reservation-party-size" className="block text-[11px] text-gray-600 mb-1">{t('Party Size')}</label>
@@ -804,6 +906,8 @@ export default function ReservationPage() {
     customer_mobile: '',
     people_count: 1,
     Date_time: '',
+    slots: '',
+    slots_time: '',
     Floor: 0,
     Table_id: 1,
     Capacity_count: 4,
@@ -816,14 +920,32 @@ export default function ReservationPage() {
     isLoading: isLoadingInlineTables,
     isError: isInlineTableLoadError,
   } = useReservationTableOptions(inlineForm.Floor);
+  const {
+    currentData: inlineGeneratedSlotsData,
+    isFetching: isLoadingInlineGeneratedSlots,
+    isError: isInlineGeneratedSlotsError,
+  } = useGetEmployeeReservationSlotsQuery(Number(inlineForm.Table_id), {
+    skip: !inlineForm.Table_id || Boolean(selectedForInline),
+  });
 
   const { data: reservations = [], isLoading } = useGetReservationsQuery();
-  const [createReservation, { isLoading: isCreating }] = useCreateReservationMutation();
+  const [createEmployeeReservation, { isLoading: isCreating }] =
+    useCreateEmployeeReservationMutation();
   const [updateReservation, { isLoading: isUpdating }] = useUpdateReservationMutation();
   const [deleteReservation, { isLoading: isDeleting }] = useDeleteReservationMutation();
   const selectedInlineTable = inlineTables.find(
     (table: Table) => table.Table_id === Number(inlineForm.Table_id),
   );
+  const inlineAvailableSlotsForDate =
+    inlineGeneratedSlotsData?.generated_slots
+      .find((day) => day.date === getDateInputValue(inlineForm.Date_time))
+      ?.slots.filter(
+        (slot) =>
+          slot.available &&
+          slot.tables.some(
+            (table) => table.table_id === Number(inlineForm.Table_id) && table.available,
+          ),
+      ) ?? [];
   const inlineExceedsTableCapacity =
     !selectedForInline &&
     selectedInlineTable != null &&
@@ -836,6 +958,9 @@ export default function ReservationPage() {
       ...previous,
       Floor: reservationFloors[0].Floor_id,
       Table_id: 0,
+      Date_time: '',
+      slots: '',
+      slots_time: '',
     }));
   }, [inlineForm.Floor, reservationFloors, selectedForInline]);
 
@@ -848,6 +973,9 @@ export default function ReservationPage() {
       ...previous,
       Table_id: firstTable?.Table_id ?? 0,
       Capacity_count: firstTable ? getTableCapacity(firstTable) : previous.Capacity_count,
+      Date_time: '',
+      slots: '',
+      slots_time: '',
     }));
   }, [
     inlineForm.Floor,
@@ -864,6 +992,8 @@ export default function ReservationPage() {
         customer_mobile: selectedForInline.customer_mobile ?? '',
         people_count: selectedForInline.people_count,
         Date_time: selectedForInline.Date_time,
+        slots: selectedForInline.slots ?? '',
+        slots_time: selectedForInline.slots_time ?? '',
         Floor: selectedForInline.Floor,
         Table_id: selectedForInline.Table_id,
         Capacity_count: selectedForInline.Capacity_count,
@@ -880,6 +1010,8 @@ export default function ReservationPage() {
       customer_mobile: '',
       people_count: 1,
       Date_time: '',
+      slots: '',
+      slots_time: '',
       Floor: reservationFloors[0]?.Floor_id ?? 0,
       Table_id: 0,
       Capacity_count: 4,
@@ -889,8 +1021,28 @@ export default function ReservationPage() {
   };
 
   const handleCreateReservation = async (data: CreateReservationPayload): Promise<boolean> => {
+    const timeRange = parseTimeRange(data.slots_time);
+    if (!timeRange) {
+      toast.error(t('Enter the reservation time in this format: 07:00 PM - 08:00 PM.'), {
+        style: toastStyle,
+      });
+      return false;
+    }
+
     try {
-      await createReservation(data).unwrap();
+      await createEmployeeReservation({
+        guest_name: data.title,
+        guest_phone: data.customer_mobile,
+        date_time: `${getDateInputValue(data.Date_time)}T${timeRange[0]}:00+05:30`,
+        slots: data.slots,
+        slots_time: data.slots_time,
+        party_size: data.people_count,
+        floor_id: data.Floor,
+        table_id: data.Table_id,
+        duration_minutes: data.duration_minutes,
+        occasion: data.occasion,
+        notes: data.Notes,
+      }).unwrap();
       setIsModalOpen(false);
       toast.success(t('Reservation created successfully!'), { style: toastStyle });
       return true;
@@ -958,6 +1110,22 @@ export default function ReservationPage() {
         });
         return;
       }
+      const selectedGeneratedSlot = inlineAvailableSlotsForDate.find(
+        (slot) =>
+          slot.slots_time === inlineForm.slots_time &&
+          slot.slot_type === inlineForm.slots,
+      );
+      if (!selectedGeneratedSlot) {
+        toast.error(t('Select an available slot generated for this table and date.'), {
+          style: toastStyle,
+        });
+        return;
+      }
+      const selectedSlotTimeRange = parseTimeRange(selectedGeneratedSlot.slots_time);
+      if (!selectedSlotTimeRange) {
+        toast.error(t('The generated slot has an invalid time range.'), { style: toastStyle });
+        return;
+      }
       const selectedTable = inlineTables.find(
         (table: Table) => table.Table_id === Number(inlineForm.Table_id),
       );
@@ -983,8 +1151,11 @@ export default function ReservationPage() {
       const payload: CreateReservationPayload = {
         Reservations_online: false,
         Customer_id: 25,
-        slots: 'Dinner',
-        slots_time: RESERVATION_SLOT_TIME,
+        slots: selectedGeneratedSlot.slot_type,
+        slots_time: selectedGeneratedSlot.slots_time,
+        duration_minutes:
+          inlineGeneratedSlotsData?.slot_duration ??
+          getSlotDurationMinutes(selectedSlotTimeRange[0], selectedSlotTimeRange[1]),
         title: guestName,
         customer_mobile: inlineForm.customer_mobile,
         Floor: selectedTable.Floor_id,
@@ -1206,7 +1377,12 @@ export default function ReservationPage() {
                     min={getReservationDateBounds().min}
                     max={getReservationDateBounds().max}
                     required={!selectedForInline}
-                    onChange={(e) => setInlineForm((p) => ({ ...p, Date_time: e.target.value }))}
+                    onChange={(e) => setInlineForm((p) => ({
+                      ...p,
+                      Date_time: e.target.value,
+                      slots: '',
+                      slots_time: '',
+                    }))}
                     disabled={!!selectedForInline}
                     aria-describedby="inline-reservation-date-time-help"
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
@@ -1238,6 +1414,62 @@ export default function ReservationPage() {
                 </div>
               </div>
 
+              {!selectedForInline && (
+                <div>
+                  <label htmlFor="inline-reservation-slot" className="block text-[11px] font-medium text-gray-600 mb-1">
+                    {t('Generated reservation slot')}
+                  </label>
+                  <select
+                    id="inline-reservation-slot"
+                    value={String(inlineAvailableSlotsForDate.findIndex(
+                      (slot) => slot.slots_time === inlineForm.slots_time &&
+                        slot.slot_type === inlineForm.slots,
+                    ))}
+                    onChange={(e) => {
+                      const slot = inlineAvailableSlotsForDate[Number(e.target.value)];
+                      if (!slot) return;
+                      setInlineForm((previous) => ({
+                        ...previous,
+                        slots: slot.slot_type,
+                        slots_time: slot.slots_time,
+                      }));
+                    }}
+                    required={!selectedForInline}
+                    disabled={
+                      !inlineForm.Table_id ||
+                      !inlineForm.Date_time ||
+                      isLoadingInlineGeneratedSlots ||
+                      isInlineGeneratedSlotsError ||
+                      inlineAvailableSlotsForDate.length === 0
+                    }
+                    aria-describedby="inline-reservation-slot-help"
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white disabled:bg-gray-50"
+                  >
+                    <option value="-1">
+                      {isLoadingInlineGeneratedSlots
+                        ? t('Loading available slots...')
+                        : !inlineForm.Table_id
+                          ? t('Select a table first')
+                          : !inlineForm.Date_time
+                            ? t('Select a reservation date first')
+                            : t('Select an available slot')}
+                    </option>
+                    {inlineAvailableSlotsForDate.map((slot, index) => (
+                      <option key={`${slot.slot_type}-${slot.slots_time}`} value={index}>
+                        {slot.slots_time} ({t(slot.slot_type)})
+                      </option>
+                    ))}
+                  </select>
+                  <p id="inline-reservation-slot-help" className="mt-1 text-[10px] text-gray-500">
+                    {isInlineGeneratedSlotsError
+                      ? t('Could not load generated slots for this table.')
+                      : !isLoadingInlineGeneratedSlots && inlineForm.Date_time && !inlineAvailableSlotsForDate.length
+                        ? t('No available generated slots for this table and date.')
+                        : inlineForm.slots_time}
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="inline-reservation-floor" className="block text-[11px] font-medium text-gray-600 mb-1">{t('Floor')}</label>
@@ -1249,6 +1481,9 @@ export default function ReservationPage() {
                       ...previous,
                       Floor: Number(e.target.value),
                       Table_id: 0,
+                      Date_time: '',
+                      slots: '',
+                      slots_time: '',
                     }))}
                     disabled={!!selectedForInline || isLoadingInlineTables || reservationFloors.length === 0}
                     className="w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:border-purple-500 bg-white disabled:bg-gray-50"
@@ -1275,6 +1510,9 @@ export default function ReservationPage() {
                         Capacity_count: selectedTable
                           ? getTableCapacity(selectedTable)
                           : previous.Capacity_count,
+                        Date_time: '',
+                        slots: '',
+                        slots_time: '',
                       }));
                     }}
                     disabled={isLoadingInlineTables || inlineTables.length === 0 || !inlineForm.Floor}

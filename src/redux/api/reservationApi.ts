@@ -11,6 +11,8 @@ import type {
   ReservationFloorOption,
   ApiResponse,
   FloorMapTable,
+  EmployeeReservationSlotsData,
+  EmployeeReservationSlotsResponse,
 } from '../../types/reservation';
 
 export const reservationApi = apiSlice.injectEndpoints({
@@ -70,6 +72,14 @@ export const reservationApi = apiSlice.injectEndpoints({
         response: ApiResponse<ReservationFloorOption[]> | ReservationFloorOption[]
       ): ReservationFloorOption[] =>
         Array.isArray(response) ? response : response?.data ?? [],
+    }),
+
+    getEmployeeReservationSlots: builder.query<EmployeeReservationSlotsData, number>({
+      query: (tableId) => ({
+        url: '/api/v1/employee/reservations/slots',
+        params: { table_id: tableId },
+      }),
+      transformResponse: (response: EmployeeReservationSlotsResponse) => response.data,
     }),
 
     getReservationFloorMap: builder.query<
@@ -150,6 +160,7 @@ export const {
   useDeleteReservationMutation,
   useGetEmployeeReservationsQuery,
   useGetReservationFloorsQuery,
+  useGetEmployeeReservationSlotsQuery,
   useGetReservationFloorMapQuery,
   useCreateEmployeeReservationMutation,
 } = reservationApi;

@@ -32,6 +32,7 @@ export interface CreateReservationPayload {
   slots: string;
   slots_time: string;
   duration_minutes?: number;
+  occasion?: string;
   title: string;
   customer_mobile: string;
   Floor: number;
@@ -67,10 +68,12 @@ export interface CreateEmployeeReservationPayload {
   slots_time: string;
   /** ISO 8601 with offset, e.g. "2026-10-25T19:30:00+05:30" */
   date_time: string;
+  slots?: string;
   party_size: number;
   floor_id: number;
   table_id: number;
-  duration_minutes: number;
+  duration_minutes?: number;
+  occasion?: string;
   notes?: string;
 }
 
@@ -171,4 +174,43 @@ export interface FloorMapTable {
 
 export interface ReservationFloorMapResponse {
   tables: FloorMapTable[];
+}
+
+export interface EmployeeReservationGeneratedSlot {
+  from: string;
+  to: string;
+  slot_type: string;
+  slots_time: string;
+  status: string;
+  booked: boolean;
+  full: boolean;
+  available: boolean;
+  booked_tables: number[];
+  tables: Array<{
+    table_id: number;
+    title: string;
+    capacity: number;
+    booked: boolean;
+    available: boolean;
+  }>;
+}
+
+export interface EmployeeReservationSlotsDay {
+  date: string;
+  day: string;
+  slots: EmployeeReservationGeneratedSlot[];
+}
+
+export interface EmployeeReservationSlotsData {
+  working_days: string[];
+  opening_time: string;
+  closing_time: string;
+  slot_duration: number;
+  generated_slots: EmployeeReservationSlotsDay[];
+}
+
+export interface EmployeeReservationSlotsResponse {
+  success: boolean;
+  days: number;
+  data: EmployeeReservationSlotsData;
 }

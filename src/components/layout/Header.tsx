@@ -222,7 +222,7 @@ const Header: React.FC = () => {
   return (
     // Changed z-40 to z-50 to ensure header sits above page content
     <header
-      className="fixed top-0 right-0 z-50 hidden lg:flex items-center justify-between px-8 py-4 bg-white border-r border-[#00000033] shadow-[0px_9px_26px_0px_#0000000D]"
+      className="fixed top-0 right-0 z-[60] hidden lg:flex items-center justify-between px-8 py-4 bg-white border-r border-[#00000033] shadow-[0px_9px_26px_0px_#0000000D]"
       style={{ left: 'var(--sidebar-width, 260px)' }}
     >
       {/* Left side: Search bar */}
@@ -316,8 +316,7 @@ const Header: React.FC = () => {
           </button>
 
           {notifOpen && (
-            // Changed z-50 to z-[60]
-            <div role="menu" className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-1000">
+            <div role="menu" className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-[70]">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <span className="font-semibold text-sm">{t('Notifications')}</span>
                 {unreadCount > 0 && (
