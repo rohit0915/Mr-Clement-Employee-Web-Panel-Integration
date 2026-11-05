@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -69,6 +70,7 @@ const MOCK_NOTIFICATIONS: Notification[] = [
 function useClickOutside<T extends HTMLElement>(
   onClose: () => void,
   isOpen: boolean,
+  additionalRef?: React.RefObject<T | null>,
 ): React.RefObject<T | null> {
   const ref = useRef<T>(null);
   const cbRef = useRef(onClose);
@@ -81,9 +83,9 @@ function useClickOutside<T extends HTMLElement>(
     if (!isOpen) return;
 
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        cbRef.current();
-      }
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || additionalRef?.current?.contains(target)) return;
+      cbRef.current();
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') cbRef.current();
@@ -95,7 +97,7 @@ function useClickOutside<T extends HTMLElement>(
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [isOpen]);
+  }, [additionalRef, isOpen]);
 
   return ref;
 }
@@ -147,9 +149,37 @@ const Header: React.FC = () => {
   /* ---------------- Notifications ---------------- */
   const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPosition, setNotifPosition] = useState<{ top: number; right: number } | null>(null);
 
   const closeNotif = useCallback(() => setNotifOpen(false), []);
-  const notifRef = useClickOutside<HTMLDivElement>(closeNotif, notifOpen);
+  const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  const notificationMenuRef = useRef<HTMLDivElement>(null);
+  const notifRef = useClickOutside<HTMLDivElement>(closeNotif, notifOpen, notificationMenuRef);
+
+  const updateNotifPosition = useCallback(() => {
+    const buttonRect = notificationButtonRef.current?.getBoundingClientRect();
+    if (!buttonRect) return;
+    setNotifPosition({
+      top: buttonRect.bottom + 8,
+      right: Math.max(8, window.innerWidth - buttonRect.right),
+    });
+  }, []);
+
+  const handleNotificationToggle = useCallback(() => {
+    if (!notifOpen) updateNotifPosition();
+    setNotifOpen((open) => !open);
+  }, [notifOpen, updateNotifPosition]);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    updateNotifPosition();
+    window.addEventListener('resize', updateNotifPosition);
+    window.addEventListener('scroll', updateNotifPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateNotifPosition);
+      window.removeEventListener('scroll', updateNotifPosition, true);
+    };
+  }, [notifOpen, updateNotifPosition]);
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
@@ -220,9 +250,8 @@ const Header: React.FC = () => {
 
   /* ---------------- Render ---------------- */
   return (
-    // Changed z-40 to z-50 to ensure header sits above page content
     <header
-      className="fixed top-0 right-0 z-[60] hidden lg:flex items-center justify-between px-8 py-4 bg-white border-r border-[#00000033] shadow-[0px_9px_26px_0px_#0000000D]"
+      className="fixed top-0 right-0 z-40 hidden lg:flex items-center justify-between px-8 py-4 bg-white border-r border-[#00000033] shadow-[0px_9px_26px_0px_#0000000D]"
       style={{ left: 'var(--sidebar-width, 260px)' }}
     >
       {/* Left side: Search bar */}
@@ -302,8 +331,9 @@ const Header: React.FC = () => {
         {/* ---------------- Notification ---------------- */}
         <div className="relative" ref={notifRef}>
           <button
+            ref={notificationButtonRef}
             type="button"
-            onClick={() => setNotifOpen((v) => !v)}
+            onClick={handleNotificationToggle}
             aria-label={t('Notifications')}
             className="relative cursor-pointer p-2 hover:opacity-80"
           >
@@ -315,8 +345,13 @@ const Header: React.FC = () => {
             )}
           </button>
 
-          {notifOpen && (
-            <div role="menu" className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-[70]">
+          {notifOpen && notifPosition && createPortal(
+            <div
+              ref={notificationMenuRef}
+              role="menu"
+              className="fixed w-80 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-[60]"
+              style={notifPosition}
+            >
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <span className="font-semibold text-sm">{t('Notifications')}</span>
                 {unreadCount > 0 && (
@@ -363,7 +398,8 @@ const Header: React.FC = () => {
                   {t('View all')}
                 </button>
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 

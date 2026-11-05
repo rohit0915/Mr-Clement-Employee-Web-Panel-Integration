@@ -415,7 +415,7 @@ const NewReservationModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto border border-gray-100">
         <div className="p-6">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
             {isReviewing ? t('Review Reservation') : t('New Reservation')}
@@ -745,7 +745,7 @@ const EditReservationModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto border border-gray-100">
         <div className="p-6">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
             {t('Edit Reservation')} #{reservation.Reservations_id}
