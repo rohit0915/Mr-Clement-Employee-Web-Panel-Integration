@@ -14,11 +14,12 @@ import {
   useSendToKitchenMutation,
   useUpdateOrderStatusMutation,
   useCreatePaymentMutation,
+  useCreatePosOrderPaymentLinkMutation,
   useCancelOrderMutation,
   useLazyGetOrderPdfUrlQuery,
 } from "@/redux/api/quickOrderSlice";
 
-import PaymentModal from "@/components/common/PaymentModal";
+import PaymentModal, { type PaymentSelection } from "@/components/common/PaymentModal";
 import ItemDetailsModal from "@/components/common/ItemDetailsModal";
 import AddonsModal from "@/components/common/AddonsModal";
 import BarTabScreen from "./BarTabScreen";
@@ -35,6 +36,7 @@ import GradientButton from "@/components/common/GradientButton";
 import { useWalkthroughStore } from "@/store/walkthroughStore";
 
 import successIcon from "@/assets/order/success_icon_large.svg";
+import { getOrCreatePendingStripePayment, getStripeCheckoutUrl } from "@/utils/stripePayment";
 
 // ✅ 1st Modal: Payment Received Success (Green Buttons)
 const PaymentReceivedModal = ({
@@ -332,6 +334,7 @@ const Orders: React.FC = () => {
   const [sendToKitchen] = useSendToKitchenMutation();
   const [updateOrderStatus] = useUpdateOrderStatusMutation();
   const [createPayment] = useCreatePaymentMutation();
+  const [createPosOrderPaymentLink] = useCreatePosOrderPaymentLinkMutation();
   const [cancelOrder] = useCancelOrderMutation();
   
   // ✅ FIXED: Used the Lazy trigger correctly
@@ -438,10 +441,20 @@ const Orders: React.FC = () => {
     ).filter((variant): variant is { name: string; id?: number } => variant !== undefined);
   }, [variantsData]);
 
+  const searchQuery = new URLSearchParams(location.search).get("search")?.trim() ?? "";
+  const normalizedSearchQuery = searchQuery.toLocaleLowerCase();
   const filteredItems = useMemo(() => {
-    if (selectedCategory === "all") return menuItems;
-    return menuItems.filter((i: any) => i.itemType === selectedCategory);
-  }, [selectedCategory, menuItems]);
+    return menuItems.filter((item: any) => {
+      const matchesSearch =
+        !normalizedSearchQuery ||
+        `${item.name ?? ""} ${item.itemTypeName ?? ""}`
+          .toLocaleLowerCase()
+          .includes(normalizedSearchQuery);
+      const matchesCategory =
+        normalizedSearchQuery || selectedCategory === "all" || item.itemType === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [selectedCategory, menuItems, normalizedSearchQuery]);
 
   const isOrderTrainingPreview = [
     ".order-item-first",
@@ -737,15 +750,45 @@ const Orders: React.FC = () => {
       const id = await saveOrderToServer();
       if (!id) return;
       setShowPaymentModal(true);
-    } catch (err: any) {
+    } catch {
       showToast(t("Failed to open payment options"), "error");
     } finally {
       setIsProcessingPayment(false);
     }
   };
 
-  const handlePaymentConfirm = async (result: { option: string; paymentOptionId: number }) => {
+  const handlePaymentConfirm = async (result: PaymentSelection) => {
     if (isOrderTrainingPreview) return;
+    if (result.method === "Stripe") {
+      const orderId = useOrderFlowStore.getState().currentOrder?.orderId;
+      if (!orderId) {
+        showToast(t("Could not find the order for Stripe checkout."), "error");
+        return;
+      }
+
+      setIsProcessingPayment(true);
+      try {
+        const pending = getOrCreatePendingStripePayment({ kind: "order", id: String(orderId) });
+        const response = await createPosOrderPaymentLink({
+          orderId,
+          idempotency_key: pending.idempotencyKey,
+        }).unwrap();
+        const checkoutUrl = getStripeCheckoutUrl(response);
+        if (!checkoutUrl) {
+          throw new Error(t("Stripe did not return a checkout URL. Retry to recover the same payment link."));
+        }
+        window.location.assign(checkoutUrl);
+      } catch (err: any) {
+        showToast(
+          err?.data?.message || err?.message || t("Could not start Stripe checkout. Retry to recover the payment link."),
+          "error",
+        );
+      } finally {
+        setIsProcessingPayment(false);
+      }
+      return;
+    }
+
     setShowPaymentModal(false);
     setShowReadyToPayModal(true);
 
@@ -917,6 +960,30 @@ const Orders: React.FC = () => {
             })}
           </div>
 
+          {searchQuery && (
+            <div
+              className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-fuchsia-100 bg-gradient-to-r from-fuchsia-50/80 to-rose-50/70 px-4 py-3"
+              aria-live="polite"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium text-slate-500">Search results for</span>
+                <span className="rounded-full bg-white px-3 py-1 font-semibold text-slate-800 shadow-sm">
+                  “{searchQuery}”
+                </span>
+                <span className="text-slate-500">
+                  {filteredItems.length} {filteredItems.length === 1 ? "item" : "items"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate("/orders", { replace: true })}
+                className="rounded-lg px-3 py-1.5 text-sm font-semibold text-fuchsia-800 transition hover:bg-white/80"
+              >
+                Clear search
+              </button>
+            </div>
+          )}
+
           {/* Items Grid Area */}
           <div className="flex-1 overflow-y-auto">
             {/* ✅ Loading state ONLY for the grid */}
@@ -929,6 +996,23 @@ const Orders: React.FC = () => {
                     <div className="h-3 bg-gray-200 rounded w-1/2" />
                   </div>
                 ))}
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-fuchsia-50 text-2xl text-fuchsia-700">
+                  <span aria-hidden="true">⌕</span>
+                </div>
+                <h2 className="text-lg font-semibold text-slate-900">No matching menu items</h2>
+                <p className="mt-1 max-w-sm text-sm text-slate-500">
+                  Try a different item name or check your spelling.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/orders", { replace: true })}
+                  className="mt-4 rounded-xl bg-gradient-to-r from-[#6a1b9a] to-[#c02670] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105"
+                >
+                  Browse all items
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">

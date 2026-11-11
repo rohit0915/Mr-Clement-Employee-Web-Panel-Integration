@@ -15,10 +15,9 @@ import setting from '@/assets/sidebar/settings.png';
 import saleperfomance from '@/assets/sidebar/sp.png';
 import attendance from '@/assets/sidebar/calendar.png';
 import orderhistory from '@/assets/sidebar/orderhistory.png';
-import TriaxxLogo from '@/assets/tiaxx_logo.svg';
 import OrderHistoryIcon from '@/assets/navbar/table_icon.svg';
 import { useWalkthroughStore } from '@/store/walkthroughStore';
-import logoUpdated from '@/assets/LOGOPlande.svg'
+import logoUpdated from '@/assets/LOGOPlande.svg';
 // NOTE: Removed the static arrays from here and moved them inside the component
 
 interface SidebarProps {

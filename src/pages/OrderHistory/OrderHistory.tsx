@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useGetAllOrderHistoryQuery, useGetOrderHistoryByDateRangeQuery, useGetOrderHistoryByStatusQuery } from '@/redux/api/orderHistoryApi';
-import PaymentModal from '@/components/common/PaymentModal';
+import PaymentModal, { type PaymentSelection } from '@/components/common/PaymentModal';
 import { SuccessModal } from '@/components/common/SuccessModal';
 import Invoice from './Invoice';
 import type { OrderItem, ServerPosOrder } from '@/types/order';
@@ -15,7 +15,12 @@ import {
   getOrderHistoryBreakdown,
   getOrderTableContext,
 } from './orderBreakdown';
-import { useLazyGetOrderByIdQuery } from '@/redux/api/quickOrderSlice';
+import {
+  useCreatePosOrderPaymentLinkMutation,
+  useLazyGetOrderByIdQuery,
+} from '@/redux/api/quickOrderSlice';
+import { getOrCreatePendingStripePayment, getStripeCheckoutUrl } from '@/utils/stripePayment';
+import toast from 'react-hot-toast';
 
 // Import the separated components
 import OrderCard from './OrderCard';
@@ -69,6 +74,7 @@ const OrderHistory = () => {
   const [orderDetailError, setOrderDetailError] = useState('');
   const orderDetailRequestId = useRef(0);
   const [fetchOrderDetails] = useLazyGetOrderByIdQuery();
+  const [createPosOrderPaymentLink] = useCreatePosOrderPaymentLinkMutation();
 
   // Filter and tab logic
   const [showDateDropdown, setShowDateDropdown] = useState(false);
@@ -482,17 +488,57 @@ const OrderHistory = () => {
         open={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
         total={selectedOrder?.pricingSummary?.totalAmount || 0}
-        onConfirm={async (method) => {
+        onConfirm={async (method: PaymentSelection) => {
           if (selectedOrder?.orderId) {
-            await orderApi.updateOrder(selectedOrder.orderId, {
-              paymentDetails: {
-                method,
-                status: 'Paid',
-                transactionId: `TXN-${Date.now()}`,
-              },
-            });
-            setShowPaymentModal(false);
-            setShowSuccessModal(true);
+            if (method.method === 'Stripe') {
+              try {
+                const pending = getOrCreatePendingStripePayment({
+                  kind: 'order',
+                  id: String(selectedOrder.orderId),
+                });
+                const response = await createPosOrderPaymentLink({
+                  orderId: selectedOrder.orderId,
+                  idempotency_key: pending.idempotencyKey,
+                }).unwrap();
+                const checkoutUrl = getStripeCheckoutUrl(response);
+                if (!checkoutUrl) {
+                  throw new Error('Stripe did not return a checkout URL. Retry to recover the same payment link.');
+                }
+                window.location.assign(checkoutUrl);
+              } catch (error: unknown) {
+                const body = error && typeof error === 'object'
+                  ? error as Record<string, unknown>
+                  : {};
+                const data = body.data && typeof body.data === 'object'
+                  ? body.data as Record<string, unknown>
+                  : {};
+                toast.error(
+                  typeof data.message === 'string'
+                    ? data.message
+                    : typeof body.message === 'string'
+                      ? body.message
+                      : 'Could not start Stripe checkout. Retry to recover the payment link.',
+                );
+              }
+              return;
+            }
+
+            try {
+              await orderApi.updateOrder(selectedOrder.orderId, {
+                paymentDetails: {
+                  method: {
+                    option: method.option,
+                    paymentOptionId: method.paymentOptionId,
+                  },
+                  status: 'Paid',
+                  transactionId: `TXN-${Date.now()}`,
+                },
+              });
+              setShowPaymentModal(false);
+              setShowSuccessModal(true);
+            } catch {
+              toast.error('Could not update the order payment.');
+            }
           }
         }}
       />

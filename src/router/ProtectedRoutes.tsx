@@ -21,9 +21,12 @@ import TrainingPage from "@/pages/Training/TrainingPage";
 import AttendancePage from "@/pages/Attendance/AttendancePage";
 import ReservationPage from "@/pages/Reservation/ReservationPage";
 import WorkShift from "@/pages/shift/WorkShift";
+import StripePaymentReturn from "@/pages/Payments/StripePaymentReturn";
 
 export const ProtectedRoutes = () => (
   <Routes>
+    <Route path="/payment/success" element={<StripePaymentReturn />} />
+    <Route path="/payment/cancel" element={<StripePaymentReturn />} />
     <Route path="/" element={<AppLayout />}>
       {/* Default route → redirect to /orders */}
       <Route index element={<Navigate to="/orders" replace />} />

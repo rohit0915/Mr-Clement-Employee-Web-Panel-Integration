@@ -11,6 +11,7 @@ import {
   useGetMyPaymentOptionsQuery,
 } from '@/redux/api/quickOrderSlice';
 import Loader from '@/components/Loader';
+import { getOrCreatePendingStripePayment, getStripeCheckoutUrl } from '@/utils/stripePayment';
 
 export interface BarTab {
   _id: string;
@@ -339,7 +340,7 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
   const [showAddTabModal, setShowAddTabModal] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState<{ tabId: number; tabName: string } | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<BarTab | null>(null);
-  const [selectedPaymentOptionId, setSelectedPaymentOptionId] = useState<number | null>(null);
+  const [selectedPaymentOptionId, setSelectedPaymentOptionId] = useState<number | 'stripe' | null>(null);
   const [closeTabError, setCloseTabError] = useState('');
 
   // Form state
@@ -461,10 +462,9 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
   const handleCloseTab = async () => {
     if (!paymentTarget || closing || closeSubmissionLock.current) return;
-    const selectedOption = paymentOptions.find(
-      (option) => option.id === selectedPaymentOptionId,
-    );
-    if (!selectedOption) {
+    const isStripeSelected = selectedPaymentOptionId === 'stripe';
+    const selectedOption = paymentOptions.find((option) => option.id === selectedPaymentOptionId);
+    if (!isStripeSelected && !selectedOption) {
       setCloseTabError(t('Choose a configured payment method.'));
       return;
     }
@@ -472,14 +472,32 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
     closeSubmissionLock.current = true;
     setCloseTabError('');
     try {
-      const response = await closeBarTab({
-        tabId: paymentTarget.Bar_Tab_id,
-        Payment_Options_id: selectedOption.id,
-        payment_method: selectedOption.name,
-        payment_confirmed: true,
-      }).unwrap();
+      const request = isStripeSelected
+        ? {
+            tabId: paymentTarget.Bar_Tab_id,
+            payment_method: 'Stripe',
+            idempotency_key: getOrCreatePendingStripePayment({
+              kind: 'bar-tab',
+              id: String(paymentTarget.Bar_Tab_id),
+            }).idempotencyKey,
+          }
+        : {
+            tabId: paymentTarget.Bar_Tab_id,
+            Payment_Options_id: selectedOption!.id,
+            payment_method: selectedOption!.name,
+            payment_confirmed: true,
+          };
+      const response = await closeBarTab(request).unwrap();
       if (response?.success === false) {
         throw new Error(getResponseMessage(response) || t('Failed to close tab. Please retry.'));
+      }
+      if (isStripeSelected) {
+        const checkoutUrl = getStripeCheckoutUrl(response);
+        if (!checkoutUrl) {
+          throw new Error(t('Stripe did not return a checkout URL. Retry to recover the same payment link.'));
+        }
+        window.location.assign(checkoutUrl);
+        return;
       }
       toast.success(getResponseMessage(response) || t('Bar tab payment confirmed.'));
       setPaymentTarget(null);
@@ -998,6 +1016,30 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
 
               <p className="text-xs font-bold text-gray-600 mb-2">{t('Payment method')}</p>
               <div className="space-y-2 mb-4">
+                <label
+                  className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm cursor-pointer transition-colors ${
+                    selectedPaymentOptionId === 'stripe'
+                      ? 'border-[#8E24AA] bg-[#F3E5F5]'
+                      : 'border-gray-200 hover:border-[#8E24AA]'
+                  }`}
+                >
+                  <span>
+                    <span className="block font-semibold">Stripe</span>
+                    <span className="text-xs text-gray-500">{t('Secure hosted checkout')}</span>
+                  </span>
+                  <input
+                    type="radio"
+                    name="bar-tab-payment-method"
+                    value="stripe"
+                    checked={selectedPaymentOptionId === 'stripe'}
+                    onChange={() => {
+                      setSelectedPaymentOptionId('stripe');
+                      setCloseTabError('');
+                    }}
+                    disabled={closing}
+                    className="accent-[#8E24AA]"
+                  />
+                </label>
                 {paymentOptionsLoading ? (
                   <p className="text-sm text-gray-500">{t('Loading payment methods…')}</p>
                 ) : paymentOptionsError ? (
@@ -1067,7 +1109,11 @@ const BarTabScreen: React.FC<Props> = ({ onBack }) => {
                 <button
                   type="button"
                   onClick={handleCloseTab}
-                  disabled={closing || paymentOptionsLoading || !selectedPaymentOptionId}
+                  disabled={
+                    closing ||
+                    (selectedPaymentOptionId !== 'stripe' && paymentOptionsLoading) ||
+                    selectedPaymentOptionId === null
+                  }
                   className="flex-1 rounded-lg bg-[#8E24AA] py-2 text-sm font-bold text-white disabled:opacity-50"
                 >
                   {closing ? t('Processing payment…') : t('Confirm payment')}

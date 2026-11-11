@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import LeftPanel from '@/components/common/LeftPanel';
 
-import TriaxxLogoImg from '@/assets/tiaxx_logo.svg';
+import TriaxxLogoImg from '@/assets/LOGOPlande.svg';
 import EyeIconImg from '@/assets/eye_icon.svg';
 import EyeSlashIconImg from '@/assets/eye-password-hide.svg';
 

@@ -6,6 +6,8 @@ export interface ApiMessage {
   text: string;
   senderId: string;
   createdAt: string;
+  senderName?: string;
+  isOwnMessage?: boolean;
 }
 
 export interface ApiConversation {

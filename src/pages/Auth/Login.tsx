@@ -10,7 +10,7 @@ import {
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import LeftPanel from '@/components/common/LeftPanel';
 
-import TriaxxLogoImg from '@/assets/tiaxx_logo.svg';
+import TriaxxLogoImg from '@/assets/LOGOPlande.svg';
 import EyeIconImg from '@/assets/eye_icon.svg';
 import EyeSlashIconImg from '@/assets/eye-password-hide.svg';
 import FacebookIconImg from '@/assets/auth/facebook.svg';

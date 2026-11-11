@@ -142,6 +142,45 @@ export interface DashboardResponse {
   };
 }
 
+export interface EmployeeSearchRecord {
+  _id?: string;
+  id?: string;
+  user_id?: number;
+  Name?: string;
+  name?: string;
+  full_name?: string;
+  Employee_id?: string | number;
+  employeeId?: string | number;
+  employee_id_code?: string;
+  email?: string;
+  phone?: string;
+  user_image?: string | null;
+  profile_image?: string | null;
+  image?: string | null;
+  role?: string;
+  Status?: boolean | string;
+  status?: boolean | string;
+  Responsibility_id?: { Responsibility_name?: string };
+  Role_id?: { role_name?: string };
+}
+
+export interface EmployeeSearchResponse {
+  success?: boolean;
+  message?: string;
+  count?: number;
+  total?: number;
+  data?:
+    | EmployeeSearchRecord[]
+    | {
+        employees?: EmployeeSearchRecord[];
+        results?: EmployeeSearchRecord[];
+        users?: EmployeeSearchRecord[];
+        items?: EmployeeSearchRecord[];
+        count?: number;
+        total?: number;
+      };
+}
+
 /* ---- NEW: Shift Management Types ---- */
 
 export interface ShiftData {
@@ -308,6 +347,13 @@ export const apiSlice = createApi({
       providesTags: (result, error, id) => [{ type: 'Employee', id }],
     }),
 
+    searchEmployees: builder.query<EmployeeSearchResponse | EmployeeSearchRecord[], { q: string; limit: number }>({
+      query: ({ q, limit }) => ({
+        url: '/api/v1/employee/search',
+        params: { q, limit },
+      }),
+    }),
+
     getDashboardStats: builder.query<DashboardResponse, void>({
       query: () => '/api/v1/restaurant/reports/dashboard',
       providesTags: ['Dashboard'],
@@ -357,6 +403,7 @@ export const {
   useFetchUserProfileQuery,
   useLogoutUserMutation,
   useGetEmployeePerformanceQuery,
+  useSearchEmployeesQuery,
   useGetDashboardStatsQuery,
   useGetRestaurantDashboardQuery,
   // Shift Hooks

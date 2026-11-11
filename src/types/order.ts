@@ -289,10 +289,11 @@ export interface BarTabAddItemBody {
 
 export interface BarTabClosePaymentBody {
   tabId: number;
-  Payment_Options_id: number;
+  Payment_Options_id?: number;
   payment_method: string;
-  payment_confirmed: boolean;
+  payment_confirmed?: boolean;
   payment_reference?: string;
+  idempotency_key?: string;
 }
 
 // ==========================================

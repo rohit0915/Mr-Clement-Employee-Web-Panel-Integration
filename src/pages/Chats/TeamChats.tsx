@@ -49,7 +49,7 @@ type Chat = User | Group;
 
 const roles = ["All", "Waiters", "Chefs", "Managers"];
 
-const mapApiToChat = (apiChat: ApiConversation, myUserId: string | null): Chat => {
+const mapApiToChat = (apiChat: ApiConversation, myUserIds: string[]): Chat => {
   const rawLastMsg = apiChat.last_message as any;
   
   // CRITICAL FIX: Safely extract text. It might be an object or missing entirely.
@@ -92,7 +92,7 @@ const mapApiToChat = (apiChat: ApiConversation, myUserId: string | null): Chat =
   }
 
   const other =
-    apiChat.participants?.find((p) => String(p.participant_id) !== String(myUserId)) ||
+    apiChat.participants?.find((p) => !myUserIds.includes(String(p.participant_id))) ||
     apiChat.participants?.[0];
 
   return {
@@ -189,7 +189,7 @@ interface ChatWindowProps {
   loading: boolean;
   onSend: (text: string) => Promise<void>;
   socketConnected: boolean;
-  myUserId: string | null;
+  myUserIds: string[];
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -200,7 +200,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   loading,
   onSend,
   socketConnected,
-  myUserId,
+  myUserIds,
 }) => {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -281,8 +281,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {messages.length === 0 ? (
           <div className="text-center text-[#222] mt-20">No messages yet. Say hello!</div>
         ) : (
-          messages.map((msg: any) => {
-            const mine = myUserId ? String(msg.senderId) === String(myUserId) : false;
+          messages.map((msg) => {
+            const mine =
+              msg.isOwnMessage === true || myUserIds.includes(String(msg.senderId));
             const msgDate = new Date(msg.createdAt || Date.now()).toLocaleDateString();
             const showDateSeparator = msgDate !== lastDate;
             if (showDateSeparator) lastDate = msgDate;
@@ -414,16 +415,22 @@ const TeamChats: React.FC = () => {
 
   const token = localStorage.getItem("token");
 
-  const myUserId = useMemo<string | null>(() => {
-    try {
-      const raw = localStorage.getItem("user");
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed?.id ? String(parsed.id) : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const authUser = useSelector((state: RootState) => state.auth.user);
+  const myUserIds = useMemo(
+    () =>
+      [
+        authUser?.id,
+        authUser?._id,
+        authUser?.user_id,
+        authUser?.employee_id,
+        authUser?.Employee_id,
+        authUser?.employeeId,
+      ]
+        .filter((id): id is string | number => typeof id === "string" || typeof id === "number")
+        .map(String),
+    [authUser],
+  );
+  const myUserId = myUserIds[0] ?? null;
 
   const {
     isActive,
@@ -473,6 +480,7 @@ const TeamChats: React.FC = () => {
           text,
           senderId: myUserId ?? "me",
           createdAt: new Date().toISOString(),
+          isOwnMessage: true,
         })
       );
 
@@ -489,6 +497,7 @@ const TeamChats: React.FC = () => {
                 text: confirmed.message ?? confirmed.text ?? text,
                 senderId: String(confirmed.senderId ?? confirmed.sender_id ?? myUserId ?? "me"),
                 createdAt: confirmed.createdAt ?? new Date().toISOString(),
+                isOwnMessage: true,
               },
             })
           );
@@ -508,8 +517,8 @@ const TeamChats: React.FC = () => {
   }, [completed, activeTraining, completedTrainings, startTraining, navigate]);
 
   const chatList = useMemo(
-    () => conversations.map((c) => mapApiToChat(c, myUserId)),
-    [conversations, myUserId]
+    () => conversations.map((c) => mapApiToChat(c, myUserIds)),
+    [conversations, myUserIds]
   );
 
   return (
@@ -607,7 +616,7 @@ const TeamChats: React.FC = () => {
               loading={loadingChat}
               onSend={handleSend}
               socketConnected={connected}
-              myUserId={myUserId}
+              myUserIds={myUserIds}
             />
           )}
         </div>

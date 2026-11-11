@@ -2,17 +2,23 @@
 import React, { useState, useEffect } from "react";
 import { useGetMyPaymentOptionsQuery } from "@/redux/api/quickOrderSlice";
 
+export type PaymentSelection =
+  | { method: "Stripe"; option: "Stripe"; paymentOptionId?: never }
+  | { method: "Cash"; option: string; paymentOptionId: number };
+
 interface PaymentModalProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (result: { option: string; paymentOptionId: number }) => void;
+  onConfirm: (result: PaymentSelection) => void | Promise<void>;
   total: number;
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({ open, onClose, onConfirm, total }) => {
-  const { data, isLoading } = useGetMyPaymentOptionsQuery(undefined, { skip: !open });
+  const { data, isLoading, isError } = useGetMyPaymentOptionsQuery(undefined, { skip: !open });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("");
+  const [selectedMethod, setSelectedMethod] = useState<"Stripe" | "Cash">("Stripe");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ✅ STEP 1: Only keep methods where the category is "Cash"
   const cashMethods = data?.methods?.filter(
@@ -20,13 +26,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ open, onClose, onConfirm, t
   ) || [];
 
   useEffect(() => {
-    if (cashMethods.length > 0 && open) {
-      setSelectedId(cashMethods[0].Payment_Options_id);
-      setSelectedLabel(cashMethods[0].option);
+    if (open) {
+      setSelectedMethod("Stripe");
+      setSelectedId(null);
+      setSelectedLabel("");
+      setIsSubmitting(false);
     }
-  }, [cashMethods, open]);
+  }, [open]);
 
   if (!open) return null;
+
+  const canSubmit = selectedMethod === "Stripe" || selectedId !== null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -38,8 +48,29 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ open, onClose, onConfirm, t
         </div>
         
         <div className="flex flex-col gap-2 px-6 pt-2 pb-4 flex-1 max-h-[60vh] overflow-y-auto">
+          <label
+            className={`flex items-center justify-between py-3 px-4 rounded-xl cursor-pointer border transition-all ${
+              selectedMethod === "Stripe" ? "border-[#8E24AA] bg-purple-50" : "border-gray-200 hover:bg-gray-50"
+            }`}
+          >
+            <div className="flex flex-col">
+              <span className="font-semibold text-gray-800">Stripe</span>
+              <span className="text-xs text-gray-500">Secure hosted checkout</span>
+            </div>
+            <input
+              type="radio"
+              name="payment"
+              value="Stripe"
+              checked={selectedMethod === "Stripe"}
+              onChange={() => setSelectedMethod("Stripe")}
+              className="accent-[#8E24AA] w-5 h-5"
+            />
+          </label>
+          <p className="text-xs font-semibold text-gray-500 pt-2">Cash</p>
           {isLoading ? (
             <div className="text-center py-4 text-gray-500">Loading options...</div>
+          ) : isError ? (
+            <div className="text-center py-4 text-red-600" role="alert">Could not load cash payment options.</div>
           ) : cashMethods.length === 0 ? (
             <div className="text-center py-4 text-gray-500">No Cash payment methods configured.</div>
           ) : (
@@ -62,6 +93,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ open, onClose, onConfirm, t
                   onChange={() => {
                     setSelectedId(opt.Payment_Options_id);
                     setSelectedLabel(opt.option);
+                    setSelectedMethod("Cash");
                   }} 
                   className="accent-[#8E24AA] w-5 h-5" 
                 />
@@ -73,14 +105,26 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ open, onClose, onConfirm, t
         <div className="flex flex-col gap-3 px-6 pb-6 pt-2 border-t">
           <button
             className="choose-payment-btn w-full py-3 rounded-xl text-lg font-semibold text-white bg-gradient-to-r from-[#8E24AA] to-[#D32F2F] shadow-md hover:opacity-90 transition-all disabled:opacity-50"
-            disabled={!selectedId}
-            onClick={() => {
-              if (selectedId) {
-                onConfirm({ option: selectedLabel, paymentOptionId: selectedId });
+            disabled={!canSubmit || isSubmitting}
+            onClick={async () => {
+              if (!canSubmit || isSubmitting) return;
+              setIsSubmitting(true);
+              try {
+                if (selectedMethod === "Stripe") {
+                  await onConfirm({ method: "Stripe", option: "Stripe" });
+                } else if (selectedId !== null) {
+                  await onConfirm({
+                    method: "Cash",
+                    option: selectedLabel,
+                    paymentOptionId: selectedId,
+                  });
+                }
+              } finally {
+                setIsSubmitting(false);
               }
             }}
           >
-            Pay {total.toLocaleString()} XOF
+            {isSubmitting ? "Starting payment..." : `Pay ${total.toLocaleString()} XOF`}
           </button>
         </div>
       </div>

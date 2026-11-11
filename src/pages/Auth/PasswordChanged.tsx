@@ -1,7 +1,7 @@
 // src/pages/auth/PasswordUpdatedPage.tsx
 import React from 'react';
 import { Link } from 'react-router-dom';
-import TriaxxLogoImg from '@/assets/tiaxx_logo.svg';
+import TriaxxLogoImg from '@/assets/LOGOPlande.svg';
 
 const PasswordUpdatedPage: React.FC = () => {
   return (

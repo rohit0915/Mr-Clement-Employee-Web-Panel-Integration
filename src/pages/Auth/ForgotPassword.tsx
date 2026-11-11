@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import LeftPanel from '@/components/common/LeftPanel';
 import { useForgetPasswordSendOtpMutation } from '@/api/apiSlice';
 
-import TriaxxLogoImg from '@/assets/tiaxx_logo.svg';
+import TriaxxLogoImg from '@/assets/LOGOPlande.svg';
 
 const extractErrorMessage = (err: any, fallback: string): string => {
   const data = err?.data;

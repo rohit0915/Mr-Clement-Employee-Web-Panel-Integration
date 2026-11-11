@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 
@@ -108,6 +108,7 @@ function useClickOutside<T extends HTMLElement>(
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, i18n } = useTranslation();
 
   const { data: profileResponse } = useGetProfileQuery();
@@ -229,12 +230,20 @@ const Header: React.FC = () => {
   /* ---------------- Search ---------------- */
   const [query, setQuery] = useState('');
 
+  useEffect(() => {
+    const searchQuery = new URLSearchParams(location.search).get('search') ?? '';
+    setQuery(location.pathname === '/orders' ? searchQuery : '');
+  }, [location.pathname, location.search]);
+
   const handleSearchSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
       const trimmed = query.trim();
-      if (!trimmed) return;
-      navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+      if (!trimmed) {
+        navigate('/orders');
+        return;
+      }
+      navigate(`/orders?search=${encodeURIComponent(trimmed)}`);
     },
     [navigate, query],
   );
@@ -246,7 +255,10 @@ const Header: React.FC = () => {
     [handleSearchSubmit],
   );
 
-  const clearSearch = useCallback(() => setQuery(''), []);
+  const clearSearch = useCallback(() => {
+    setQuery('');
+    if (location.pathname === '/orders' && location.search) navigate('/orders', { replace: true });
+  }, [location.pathname, location.search, navigate]);
 
   /* ---------------- Render ---------------- */
   return (
@@ -258,30 +270,30 @@ const Header: React.FC = () => {
       <form
         onSubmit={handleSearchSubmit}
         role="search"
-        className="flex items-center gap-4 px-4 py-2 rounded-full bg-[linear-gradient(180deg,rgba(106,27,154,0.1)_0%,rgba(211,47,47,0.1)_100%)] w-full max-w-sm"
+        className="flex h-11 w-full max-w-md items-center gap-3 rounded-full border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-fuchsia-300 focus-within:ring-4 focus-within:ring-fuchsia-100"
       >
-        <button type="button" aria-label="Toggle sidebar" className="flex-shrink-0">
+        <button type="button" aria-label="Toggle sidebar" className="flex-shrink-0 rounded-full p-1.5 transition hover:bg-slate-100">
           <img src={HamburgerIcon} alt="" aria-hidden="true" className="h-5 w-5" />
         </button>
 
         <input
-          type="text"
+          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder={t('Search')}
+          placeholder={t('Search menu items…')}
           aria-label={t('Search')}
-          className="bg-transparent focus:outline-none w-full text-gray-800 placeholder-gray-500 font-medium"
+          className="w-full bg-transparent text-sm font-medium text-slate-800 outline-none placeholder:font-normal placeholder:text-slate-400"
         />
 
         {query && (
-          <button type="button" onClick={clearSearch} aria-label="Clear search" className="text-gray-500 hover:text-gray-700 text-sm">
-            ✕
+          <button type="button" onClick={clearSearch} aria-label="Clear search" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+            <span aria-hidden="true">×</span>
           </button>
         )}
 
-        <button type="submit" aria-label="Submit search" className="flex-shrink-0">
-          <img src={SearchIcon} alt="" aria-hidden="true" className="h-5 w-5" />
+        <button type="submit" aria-label="Search menu items" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6a1b9a] to-[#c02670] transition hover:brightness-110">
+          <img src={SearchIcon} alt="" aria-hidden="true" className="h-4 w-4 brightness-0 invert" />
         </button>
       </form>
 

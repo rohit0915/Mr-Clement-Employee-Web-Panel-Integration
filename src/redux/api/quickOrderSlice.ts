@@ -13,6 +13,16 @@ import type {
   BarTabClosePaymentBody,
 } from '@/types/order';
 
+export interface PosOrderPaymentLinkResponse {
+  success?: boolean;
+  message?: string;
+  checkout_url?: string;
+  data?: {
+    checkout_url?: string;
+    [key: string]: unknown;
+  };
+}
+
 export const quickOrderApi = createApi({
   reducerPath: 'quickOrderApi',
   baseQuery: fetchBaseQuery({
@@ -186,6 +196,48 @@ export const quickOrderApi = createApi({
       invalidatesTags: ['OrderList', 'TableStatus'],
     }),
 
+    createPosOrderPaymentLink: builder.mutation<
+      PosOrderPaymentLinkResponse,
+      { orderId: string | number; idempotency_key?: string }
+    >({
+      query: ({ orderId, ...body }) => ({
+        url: `/api/v1/restaurant/pos_order/${orderId}/payment-link`,
+        method: 'POST',
+        body,
+      }),
+    }),
+
+    confirmPosOrderPayment: builder.mutation<
+      { statusCode: number; body: unknown },
+      string | number
+    >({
+      query: (orderId) => ({
+        url: `/api/v1/restaurant/pos_order/${orderId}/payment/confirm`,
+        method: 'POST',
+      }),
+      transformResponse: (body: unknown, meta) => ({
+        statusCode: meta?.response?.status ?? 0,
+        body,
+      }),
+      invalidatesTags: (_result, _error, orderId) => [
+        { type: 'Order', id: orderId },
+        'OrderList',
+        'TableStatus',
+      ],
+    }),
+
+    cancelPosOrderPayment: builder.mutation<unknown, string | number>({
+      query: (orderId) => ({
+        url: `/api/v1/restaurant/pos_order/${orderId}/payment/cancel`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, _error, orderId) => [
+        { type: 'Order', id: orderId },
+        'OrderList',
+        'TableStatus',
+      ],
+    }),
+
     getOrderById: builder.query<ApiResponse<ServerPosOrder>, number | string>({
       query: (id) => `/api/v1/restaurant/pos_order/getbyid/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Order', id }],
@@ -255,6 +307,35 @@ export const quickOrderApi = createApi({
       invalidatesTags: (_r, _e, arg) => [{ type: 'BarTabs', id: arg.tabId }, 'BarTabs'],
     }),
 
+    confirmBarTabPayment: builder.mutation<
+      { statusCode: number; body: unknown },
+      number | string
+    >({
+      query: (tabId) => ({
+        url: `/api/v1/restaurant/bar-tabs/${tabId}/payment/confirm`,
+        method: 'POST',
+      }),
+      transformResponse: (body: unknown, meta) => ({
+        statusCode: meta?.response?.status ?? 0,
+        body,
+      }),
+      invalidatesTags: (_result, _error, tabId) => [
+        { type: 'BarTabs', id: tabId },
+        'BarTabs',
+      ],
+    }),
+
+    cancelBarTabPayment: builder.mutation<unknown, number | string>({
+      query: (tabId) => ({
+        url: `/api/v1/restaurant/bar-tabs/${tabId}/payment/cancel`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, _error, tabId) => [
+        { type: 'BarTabs', id: tabId },
+        'BarTabs',
+      ],
+    }),
+
     cancelOrder: builder.mutation<
       ApiResponse<ServerPosOrder>,
       { id: number | string; reason: string }
@@ -297,6 +378,9 @@ export const {
   useUpdateOrderItemStatusMutation,
   useUpdateOrderStatusMutation,
   useCreatePaymentMutation,
+  useCreatePosOrderPaymentLinkMutation,
+  useConfirmPosOrderPaymentMutation,
+  useCancelPosOrderPaymentMutation,
   useGetOrderByIdQuery,
   useLazyGetOrderByIdQuery,
   useGetOrderPdfUrlQuery,
@@ -307,5 +391,7 @@ export const {
   useCreateBarTabMutation,
   useAddBarTabItemMutation,
   useCloseBarTabWithPaymentMutation,
+  useConfirmBarTabPaymentMutation,
+  useCancelBarTabPaymentMutation,
   useCancelOrderMutation,
 } = quickOrderApi;
