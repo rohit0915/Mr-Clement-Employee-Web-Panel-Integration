@@ -16,10 +16,17 @@ import {
   getOrderTableContext,
 } from './orderBreakdown';
 import {
+  useCancelPosOrderPaymentMutation,
   useCreatePosOrderPaymentLinkMutation,
   useLazyGetOrderByIdQuery,
 } from '@/redux/api/quickOrderSlice';
-import { getOrCreatePendingStripePayment, getStripeCheckoutUrl } from '@/utils/stripePayment';
+import {
+  clearPendingStripePayment,
+  getOrCreatePendingStripePayment,
+  getPendingStripePayment,
+  getStripeActionFailure,
+  getStripeCheckoutUrl,
+} from '@/utils/stripePayment';
 import toast from 'react-hot-toast';
 
 // Import the separated components
@@ -75,6 +82,7 @@ const OrderHistory = () => {
   const orderDetailRequestId = useRef(0);
   const [fetchOrderDetails] = useLazyGetOrderByIdQuery();
   const [createPosOrderPaymentLink] = useCreatePosOrderPaymentLinkMutation();
+  const [cancelPosOrderPayment] = useCancelPosOrderPaymentMutation();
 
   // Filter and tab logic
   const [showDateDropdown, setShowDateDropdown] = useState(false);
@@ -521,6 +529,34 @@ const OrderHistory = () => {
                 );
               }
               return;
+            }
+
+            const pendingStripe = getPendingStripePayment();
+            if (
+              pendingStripe?.kind === 'order' &&
+              pendingStripe.id === String(selectedOrder.orderId)
+            ) {
+              try {
+                const response = await cancelPosOrderPayment(selectedOrder.orderId).unwrap();
+                const failure = getStripeActionFailure(response);
+                if (failure) throw new Error(failure);
+                clearPendingStripePayment();
+              } catch (error: unknown) {
+                const body = error && typeof error === 'object'
+                  ? error as Record<string, unknown>
+                  : {};
+                const data = body.data && typeof body.data === 'object'
+                  ? body.data as Record<string, unknown>
+                  : {};
+                toast.error(
+                  typeof data.message === 'string'
+                    ? data.message
+                    : typeof body.message === 'string'
+                      ? body.message
+                      : 'Could not cancel the pending Stripe checkout.',
+                );
+                return;
+              }
             }
 
             try {

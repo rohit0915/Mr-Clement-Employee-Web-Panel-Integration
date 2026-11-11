@@ -27,7 +27,30 @@ type OrderRecord = {
   serviceCharge?: unknown;
   Fees?: unknown;
   fees?: unknown;
+  Order_Status?: unknown;
+  order_status?: unknown;
+  payment_status?: unknown;
+  paymentStatus?: unknown;
+  Payment_Status?: unknown;
   items?: OrderLineRecord[];
+};
+
+export const isOrderPaid = (order: OrderRecord): boolean => {
+  const paymentStatus = [
+    order.payment_status,
+    order.paymentStatus,
+    order.Payment_Status,
+  ].find((value) => typeof value === 'string' && value.trim());
+  const orderStatus = order.order_status ?? order.Order_Status;
+  const paidPaymentStatuses = ['paid', 'success', 'succeeded', 'completed'];
+  const paidOrderStatuses = ['completed', 'served'];
+
+  return (
+    (typeof paymentStatus === 'string' &&
+      paidPaymentStatuses.includes(paymentStatus.trim().toLowerCase())) ||
+    (typeof orderStatus === 'string' &&
+      paidOrderStatuses.includes(orderStatus.trim().toLowerCase()))
+  );
 };
 
 export const getOrderCreatedAt = (

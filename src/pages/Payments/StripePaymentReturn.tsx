@@ -8,6 +8,7 @@ import {
 } from '@/redux/api/quickOrderSlice';
 import {
   clearPendingStripePayment,
+  getStripeActionFailure,
   getPendingStripePayment,
   type PendingStripePayment,
 } from '@/utils/stripePayment';
@@ -21,13 +22,6 @@ const getErrorMessage = (error: unknown): string => {
     if (typeof message === 'string') return message;
   }
   return typeof body.message === 'string' ? body.message : 'Please try again.';
-};
-
-const getResponseFailure = (response: unknown): string | null => {
-  if (!response || typeof response !== 'object') return null;
-  const body = response as Record<string, unknown>;
-  if (body.success !== false) return null;
-  return typeof body.message === 'string' ? body.message : 'The server did not confirm the requested payment action.';
 };
 
 const StripePaymentReturn = () => {
@@ -59,7 +53,7 @@ const StripePaymentReturn = () => {
         setMessage('Stripe has not verified every payment yet. The bill remains unpaid; you can check again shortly.');
         return;
       }
-      const failure = getResponseFailure(result.body);
+      const failure = getStripeActionFailure(result.body);
       if (failure) {
         setMessage(failure);
         return;
@@ -91,7 +85,7 @@ const StripePaymentReturn = () => {
       const response = pending.kind === 'order'
         ? await cancelOrderPayment(pending.id).unwrap()
         : await cancelBarTabPayment(pending.id).unwrap();
-      const failure = getResponseFailure(response);
+      const failure = getStripeActionFailure(response);
       if (failure) {
         setMessage(failure);
         return;

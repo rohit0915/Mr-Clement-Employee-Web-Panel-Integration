@@ -15,6 +15,7 @@ import {
   useUpdateOrderStatusMutation,
   useCreatePaymentMutation,
   useCreatePosOrderPaymentLinkMutation,
+  useCancelPosOrderPaymentMutation,
   useCancelOrderMutation,
   useLazyGetOrderPdfUrlQuery,
 } from "@/redux/api/quickOrderSlice";
@@ -36,7 +37,13 @@ import GradientButton from "@/components/common/GradientButton";
 import { useWalkthroughStore } from "@/store/walkthroughStore";
 
 import successIcon from "@/assets/order/success_icon_large.svg";
-import { getOrCreatePendingStripePayment, getStripeCheckoutUrl } from "@/utils/stripePayment";
+import {
+  clearPendingStripePayment,
+  getOrCreatePendingStripePayment,
+  getPendingStripePayment,
+  getStripeActionFailure,
+  getStripeCheckoutUrl,
+} from "@/utils/stripePayment";
 
 // ✅ 1st Modal: Payment Received Success (Green Buttons)
 const PaymentReceivedModal = ({
@@ -335,6 +342,7 @@ const Orders: React.FC = () => {
   const [updateOrderStatus] = useUpdateOrderStatusMutation();
   const [createPayment] = useCreatePaymentMutation();
   const [createPosOrderPaymentLink] = useCreatePosOrderPaymentLinkMutation();
+  const [cancelPosOrderPayment] = useCancelPosOrderPaymentMutation();
   const [cancelOrder] = useCancelOrderMutation();
   
   // ✅ FIXED: Used the Lazy trigger correctly
@@ -789,13 +797,35 @@ const Orders: React.FC = () => {
       return;
     }
 
+    const orderId = useOrderFlowStore.getState().currentOrder?.orderId;
+    if (!orderId) {
+      showToast(t("Could not find the order for payment."), "error");
+      return;
+    }
+
+    const pendingStripe = getPendingStripePayment();
+    if (pendingStripe?.kind === "order" && pendingStripe.id === String(orderId)) {
+      setIsProcessingPayment(true);
+      try {
+        const response = await cancelPosOrderPayment(orderId).unwrap();
+        const failure = getStripeActionFailure(response);
+        if (failure) throw new Error(failure);
+        clearPendingStripePayment();
+      } catch (err: any) {
+        showToast(
+          err?.data?.message || err?.message || t("Could not cancel the pending Stripe checkout."),
+          "error",
+        );
+        return;
+      } finally {
+        setIsProcessingPayment(false);
+      }
+    }
+
     setShowPaymentModal(false);
     setShowReadyToPayModal(true);
 
     setTimeout(async () => {
-      const orderId = useOrderFlowStore.getState().currentOrder?.orderId;
-      if (!orderId) return;
-
       try {
         await createPayment({
           Payment_Options_id: result.paymentOptionId,

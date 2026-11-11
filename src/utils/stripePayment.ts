@@ -8,6 +8,15 @@ export type PendingStripePayment = StripePaymentResource & {
 
 const pendingPaymentStorageKey = 'pendingStripePosPayment';
 
+export const getStripeActionFailure = (response: unknown): string | null => {
+  if (!response || typeof response !== 'object') return null;
+  const body = response as Record<string, unknown>;
+  if (body.success !== false) return null;
+  return typeof body.message === 'string'
+    ? body.message
+    : 'The server did not confirm the requested payment action.';
+};
+
 export const getStripeCheckoutUrl = (response: unknown): string | null => {
   if (!response || typeof response !== 'object') return null;
 
