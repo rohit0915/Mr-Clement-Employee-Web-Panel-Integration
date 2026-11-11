@@ -14,6 +14,7 @@ import {
   getOrderFulfillmentType,
   getOrderHistoryBreakdown,
   getOrderTableContext,
+  isOrderPaid,
 } from './orderBreakdown';
 import {
   useCancelPosOrderPaymentMutation,
@@ -68,6 +69,9 @@ const getDateRange = (filter: string) => {
 const OrderHistory = () => {
   type OrderHistoryRecord = ServerPosOrder & {
     order_status?: string;
+    paymentStatus?: string;
+    Payment_Status?: string;
+    paymentDetails?: { method?: string; status?: string };
     Table?: { table_name?: string } | null;
   };
   // 'orders' corresponds to the PURPLE toggle, 'dining' corresponds to the ORANGE toggle
@@ -213,6 +217,11 @@ const OrderHistory = () => {
 
   const toSelectedOrder = (order: OrderHistoryRecord) => {
     const breakdown = getOrderHistoryBreakdown(order);
+    const paymentStatus =
+      order.payment_status ??
+      order.paymentStatus ??
+      order.Payment_Status ??
+      order.paymentDetails?.status;
     return {
       ...order,
       orderId: String(order.POS_Order_id),
@@ -228,7 +237,11 @@ const OrderHistory = () => {
         totalAmount: breakdown.total,
       },
       customerInfo: { name: order.Customer?.Name || '' },
-      paymentDetails: { method: 'Cash' },
+      paymentStatus,
+      paymentDetails: {
+        method: order.payment_method ?? order.paymentDetails?.method ?? 'Cash',
+        status: paymentStatus,
+      },
     };
   };
 
@@ -439,6 +452,11 @@ const OrderHistory = () => {
             tableContext: selectedOrder.tableContext,
             paymentType: selectedOrder.paymentDetails?.method || 'Cash',
             customerName: selectedOrder.customerInfo?.name || '',
+            isPaid: isOrderPaid(selectedOrder),
+            canPay:
+              !isOrderPaid(selectedOrder) &&
+              !orderDetailLoading &&
+              !orderDetailError,
           }}
           onUpdateItemQuantity={async (itemId, newQty) => {
             if (selectedOrder?.orderId) {
@@ -486,6 +504,14 @@ const OrderHistory = () => {
             }
           }}
           onChoosePaymentOption={() => {
+            if (isOrderPaid(selectedOrder)) {
+              toast.error('This order is already paid.');
+              return;
+            }
+            if (orderDetailLoading || orderDetailError) {
+              toast.error('Could not verify the payment status. Please refresh the order and try again.');
+              return;
+            }
             setShowSummaryModal(false);
             setShowPaymentModal(true);
           }}
@@ -493,10 +519,15 @@ const OrderHistory = () => {
       )}
 
       <PaymentModal
-        open={showPaymentModal}
+        open={showPaymentModal && !!selectedOrder && !isOrderPaid(selectedOrder)}
         onClose={() => setShowPaymentModal(false)}
         total={selectedOrder?.pricingSummary?.totalAmount || 0}
         onConfirm={async (method: PaymentSelection) => {
+          if (!selectedOrder || isOrderPaid(selectedOrder)) {
+            setShowPaymentModal(false);
+            toast.error('This order is already paid.');
+            return;
+          }
           if (selectedOrder?.orderId) {
             if (method.method === 'Stripe') {
               try {

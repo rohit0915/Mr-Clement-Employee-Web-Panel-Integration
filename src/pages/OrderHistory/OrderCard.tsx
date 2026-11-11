@@ -13,6 +13,7 @@ import {
   getOrderFulfillmentType,
   getOrderHistoryBreakdown,
   getOrderTableContext,
+  isOrderPaid,
 } from './orderBreakdown';
 
 const getMinutesAgo = (createdAt: Date | null) => {
@@ -205,11 +206,7 @@ const OrderCard = ({ order, onClick, onCancelled }: OrderCardProps) => {
   // ✅ Cancel eligibility
   const status = order.order_status || order.Order_Status;
   const isCancelled = status === 'Cancelled';
-  const isPaid =
-    status === 'Completed' ||
-    status === 'Served' ||
-    order.payment_status === 'Success' ||
-    order.paymentStatus === 'Success';
+  const isPaid = isOrderPaid(order);
   const canCancel = !isCancelled && !isPaid && !isCancelling;
 
   const openCancelModal = (e: React.MouseEvent) => {

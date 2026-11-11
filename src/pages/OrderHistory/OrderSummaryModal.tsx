@@ -19,6 +19,8 @@ interface OrderSummaryModalProps {
     tableContext?: string;
     paymentType?: string;
     customerName?: string;
+    isPaid: boolean;
+    canPay: boolean;
   };
   onUpdateItemQuantity: (itemId: string | number, newQty: number) => void;
   onChoosePaymentOption: () => void;
@@ -199,12 +201,26 @@ export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
               <IoPrintOutline size={18} />
               Print Bill
             </button>
-            <button
-              onClick={onChoosePaymentOption}
-              className="w-full py-3.5 rounded-[10px] text-white font-semibold text-[14px] bg-gradient-to-r from-[#6A1B9A] to-[#D32F2F] hover:opacity-90 transition-opacity"
-            >
-              Choose Payment Option
-            </button>
+            {order.isPaid ? (
+              <div
+                className="w-full rounded-[10px] bg-emerald-50 py-3.5 text-center text-sm font-semibold text-emerald-700"
+                role="status"
+              >
+                Order already paid
+              </div>
+            ) : (
+              <button
+                onClick={onChoosePaymentOption}
+                disabled={!order.canPay}
+                className="w-full rounded-[10px] bg-gradient-to-r from-[#6A1B9A] to-[#D32F2F] py-3.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {order.canPay
+                  ? 'Choose Payment Option'
+                  : isLoading
+                    ? 'Checking payment status…'
+                    : 'Payment status unavailable'}
+              </button>
+            )}
           </div>
         </div>
       </div>
