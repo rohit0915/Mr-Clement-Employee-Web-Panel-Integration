@@ -32,22 +32,30 @@ type OrderRecord = {
   payment_status?: unknown;
   paymentStatus?: unknown;
   Payment_Status?: unknown;
+  paymentDetails?: { status?: unknown } | null;
+  payment_details?: { status?: unknown } | null;
   items?: OrderLineRecord[];
 };
 
 export const isOrderPaid = (order: OrderRecord): boolean => {
-  const paymentStatus = [
+  const paymentStatuses = [
     order.payment_status,
     order.paymentStatus,
     order.Payment_Status,
-  ].find((value) => typeof value === 'string' && value.trim());
+    order.paymentDetails?.status,
+    order.payment_details?.status,
+  ];
   const orderStatus = order.order_status ?? order.Order_Status;
   const paidPaymentStatuses = ['paid', 'success', 'succeeded', 'completed'];
   const paidOrderStatuses = ['completed', 'served'];
 
   return (
-    (typeof paymentStatus === 'string' &&
-      paidPaymentStatuses.includes(paymentStatus.trim().toLowerCase())) ||
+    paymentStatuses.some(
+      (value) =>
+        value === true ||
+        (typeof value === 'string' &&
+          paidPaymentStatuses.includes(value.trim().toLowerCase())),
+    ) ||
     (typeof orderStatus === 'string' &&
       paidOrderStatuses.includes(orderStatus.trim().toLowerCase()))
   );

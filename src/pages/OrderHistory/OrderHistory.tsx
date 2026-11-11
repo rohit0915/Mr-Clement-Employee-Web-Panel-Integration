@@ -18,8 +18,10 @@ import {
 } from './orderBreakdown';
 import {
   useCancelPosOrderPaymentMutation,
+  useCreatePaymentMutation,
   useCreatePosOrderPaymentLinkMutation,
   useLazyGetOrderByIdQuery,
+  useUpdateOrderStatusMutation,
 } from '@/redux/api/quickOrderSlice';
 import {
   clearPendingStripePayment,
@@ -72,6 +74,7 @@ const OrderHistory = () => {
     paymentStatus?: string;
     Payment_Status?: string;
     paymentDetails?: { method?: string; status?: string };
+    payment_details?: { method?: string; status?: string };
     Table?: { table_name?: string } | null;
   };
   // 'orders' corresponds to the PURPLE toggle, 'dining' corresponds to the ORANGE toggle
@@ -87,6 +90,8 @@ const OrderHistory = () => {
   const [fetchOrderDetails] = useLazyGetOrderByIdQuery();
   const [createPosOrderPaymentLink] = useCreatePosOrderPaymentLinkMutation();
   const [cancelPosOrderPayment] = useCancelPosOrderPaymentMutation();
+  const [createPayment] = useCreatePaymentMutation();
+  const [updateOrderStatus] = useUpdateOrderStatusMutation();
 
   // Filter and tab logic
   const [showDateDropdown, setShowDateDropdown] = useState(false);
@@ -221,7 +226,8 @@ const OrderHistory = () => {
       order.payment_status ??
       order.paymentStatus ??
       order.Payment_Status ??
-      order.paymentDetails?.status;
+      order.paymentDetails?.status ??
+      order.payment_details?.status;
     return {
       ...order,
       orderId: String(order.POS_Order_id),
@@ -239,7 +245,11 @@ const OrderHistory = () => {
       customerInfo: { name: order.Customer?.Name || '' },
       paymentStatus,
       paymentDetails: {
-        method: order.payment_method ?? order.paymentDetails?.method ?? 'Cash',
+        method:
+          order.payment_method ??
+          order.paymentDetails?.method ??
+          order.payment_details?.method ??
+          'Cash',
         status: paymentStatus,
       },
     };
@@ -590,22 +600,72 @@ const OrderHistory = () => {
               }
             }
 
+            const orderId = selectedOrder.POS_Order_id ?? selectedOrder.orderId;
+            let paymentResponse: unknown;
             try {
-              await orderApi.updateOrder(selectedOrder.orderId, {
-                paymentDetails: {
-                  method: {
-                    option: method.option,
-                    paymentOptionId: method.paymentOptionId,
-                  },
-                  status: 'Paid',
-                  transactionId: `TXN-${Date.now()}`,
-                },
-              });
-              setShowPaymentModal(false);
-              setShowSuccessModal(true);
-            } catch {
-              toast.error('Could not update the order payment.');
+              paymentResponse = await createPayment({
+                Payment_Options_id: method.paymentOptionId,
+                Order_id: orderId,
+                payment_method: method.option,
+                paymentStatus: 'Success',
+              }).unwrap();
+              const failure = getStripeActionFailure(paymentResponse);
+              if (failure) throw new Error(failure);
+            } catch (error: unknown) {
+              const body = error && typeof error === 'object'
+                ? error as Record<string, unknown>
+                : {};
+              const data = body.data && typeof body.data === 'object'
+                ? body.data as Record<string, unknown>
+                : {};
+              toast.error(
+                typeof data.message === 'string'
+                  ? data.message
+                  : typeof body.message === 'string'
+                    ? body.message
+                    : 'Could not record the order payment.',
+              );
+              return;
             }
+
+            setSelectedOrder((current: any) => ({
+              ...current,
+              payment_status: 'Success',
+              paymentStatus: 'Success',
+              payment_method: method.option,
+              paymentDetails: {
+                ...current.paymentDetails,
+                method: method.option,
+                status: 'Paid',
+              },
+            }));
+
+            try {
+              const statusResponse = await updateOrderStatus({
+                id: orderId,
+                Order_Status: 'Completed',
+              }).unwrap();
+              const failure = getStripeActionFailure(statusResponse);
+              if (failure) throw new Error(failure);
+            } catch (error: unknown) {
+              const body = error && typeof error === 'object'
+                ? error as Record<string, unknown>
+                : {};
+              const data = body.data && typeof body.data === 'object'
+                ? body.data as Record<string, unknown>
+                : {};
+              toast.error(
+                typeof data.message === 'string'
+                  ? data.message
+                  : typeof body.message === 'string'
+                    ? body.message
+                    : 'Payment was recorded, but the order status could not be updated.',
+              );
+              return;
+            }
+
+            setShowPaymentModal(false);
+            setShowSuccessModal(true);
           }
         }}
       />
